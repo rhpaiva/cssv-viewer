@@ -4,15 +4,28 @@
   "private": true,
   "description": "A desktop viewer for CSSV files",
   "license": "MIT",
+  "type": "module",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "appimage": "node appimage/build.mjs"
+    "appimage": "node appimage/build.mjs",
+    "test": "npm run test:js && npm run test:rust",
+    "test:js": "npm run test:ui && npm run test:appimage",
+    "test:ui": "node --test --test-concurrency=1 \"test/ui/*.test.js\"",
+    "test:appimage": "node --test \"test/appimage/*.test.js\"",
+    "test:rust": "cd src-tauri && cargo nextest run",
+    "test:e2e": "node --test --test-concurrency=1 \"test/e2e/*.test.js\"",
+    "coverage": "npm run coverage:js && npm run coverage:rust",
+    "coverage:js": "c8 npm run test:js",
+    "coverage:rust": "node test/coverage-rust.js",
+    "lint": "shellcheck appimage/AppRun && cd src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo deny check && cargo shear"
   },
   "dependencies": {
     "@rhpaiva/cssv": "^0.5.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.12.1"
+    "@tauri-apps/cli": "^2.12.1",
+    "c8": "^12.0.0",
+    "playwright": "^1.64.0"
   }
 }
