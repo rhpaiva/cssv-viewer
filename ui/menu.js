@@ -41,9 +41,12 @@ function itemButton(item) {
 
 /** Opens a menu of `items` under `anchor`; `focusFirst` when opened from the keyboard. */
 export function openMenu(anchor, items, { label = '', focusFirst = false } = {}) {
+  // Menus closed before have faded out by now; the open one fades out as
+  // this one comes in.
+  for (const old of document.querySelectorAll('.menu:not(.open)')) old.remove();
   closeMenu();
   const menu = document.createElement('div');
-  menu.className = 'menu';
+  menu.className = 'menu open'; // viewer.css brings it in, and takes it out without .open
   menu.tabIndex = -1;
   menu.setAttribute('role', 'menu');
   if (label) menu.setAttribute('aria-label', label);
@@ -79,7 +82,9 @@ export function openMenu(anchor, items, { label = '', focusFirst = false } = {})
   const h = menu.offsetHeight;
   const left = getComputedStyle(anchor).direction === 'rtl' ? r.right - w : r.left;
   menu.style.left = `${Math.max(8, Math.min(left, innerWidth - w - 8))}px`;
-  menu.style.top = `${r.bottom + 4 + h > innerHeight - 8 ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
+  const above = r.bottom + 4 + h > innerHeight - 8;
+  menu.style.top = `${above ? Math.max(8, r.top - 4 - h) : r.bottom + 4}px`;
+  menu.classList.toggle('above', above); // grows from the button's side
 
   const focus = (i) => buttons[(i + buttons.length) % buttons.length]?.focus();
   menu.addEventListener('keydown', (e) => {
@@ -107,8 +112,8 @@ export function openMenu(anchor, items, { label = '', focusFirst = false } = {})
     menu,
     anchor,
     close: () => {
-      menu.remove();
       anchor.setAttribute('aria-expanded', 'false');
+      menu.classList.remove('open');
     },
   };
   return menu;

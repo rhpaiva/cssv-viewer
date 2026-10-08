@@ -120,7 +120,15 @@ button.primary { background: var(--text); color: var(--bg); border-color: var(--
   color: var(--text);
   box-shadow: 0 1px 2px rgb(40 30 10 / 0.06), 0 18px 40px -12px rgb(40 30 10 / 0.35);
   font: 13px/1.4 var(--sans);
+  /* Open, it grows from its button and fades in; closed, it fades out and
+     then isn't shown, as display changes at the end of its transition. */
+  transform-origin: top;
+  transition: opacity 0.12s ease-in, transform 0.12s ease-in, display 0.12s allow-discrete;
 }
+.menu.above { transform-origin: bottom; }
+.menu:not(.open) { display: none; opacity: 0; transform: scale(0.95); pointer-events: none; }
+.menu.open { transition-duration: 0.16s; transition-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1); }
+@starting-style { .menu.open { opacity: 0; transform: scale(0.95); } }
 .menu:focus { outline: none; }
 .menu-item {
   display: flex;
@@ -373,7 +381,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-wid
 
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  .status, #stage > cssv-table, .print-view, .print-bar, .print-stage { transition: none; }
+  .status, #stage > cssv-table, .print-view, .print-bar, .print-stage, .menu { transition: none; }
   .source-band.flash { animation: none; }
 }
 
