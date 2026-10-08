@@ -89,9 +89,14 @@ function stripComments(css) {
 const IMPORT = /@import\s+(?:url\(\s*)?(["'])(.*?)\1\s*\)?\s*([^;]*);/gi;
 const URL_VALUE = /url\(\s*(["']?)(.*?)\1\s*\)/gi;
 
-async function fetchOk(url) {
+// A response of one of `types`: the window applies a stylesheet only as
+// text/css, and an SVG has no use for anything but images and fonts, so a
+// url() that names another file (a .txt, a key) doesn't put it in the SVG.
+async function fetchOk(url, types) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+  const type = (response.headers.get('content-type') ?? '').toLowerCase();
+  if (!types.some((t) => type.startsWith(t))) throw new Error(`${url}: ${type || 'no type'}`);
   return response;
 }
 
@@ -106,7 +111,8 @@ const dataUrl = (blob) => new Promise((resolve, reject) => {
  * A style block with everything it loads inside it: imports inlined (with
  * their conditions as @media, @supports or @layer around them) and url()s as
  * data: URLs, because an SVG image loads nothing. What can't be fetched, such
- * as remote content the reader hasn't allowed, is left out.
+ * as remote content the reader hasn't allowed, is left out, as is what isn't
+ * a stylesheet, an image or a font.
  */
 async function selfContained(css, base, depth = 0) {
   css = stripComments(rewriteCssUrls(css, base));
@@ -119,7 +125,7 @@ async function selfContained(css, base, depth = 0) {
   for (const { url, conditions } of imports) {
     if (depth > 8) break;
     try {
-      let inner = await selfContained(await (await fetchOk(url)).text(), url, depth + 1);
+      let inner = await selfContained(await (await fetchOk(url, ['text/css'])).text(), url, depth + 1);
       const layer = /\blayer(?:\(\s*([^)]*)\))?/i.exec(conditions);
       const supports = /\bsupports\((.*)\)/i.exec(conditions);
       const media = conditions.replace(/\blayer(?:\([^)]*\))?|\bsupports\(.*\)/gi, '').trim();
@@ -135,12 +141,15 @@ async function selfContained(css, base, depth = 0) {
   const embedded = new Map();
   await Promise.all(urls.map(async (url) => {
     try {
-      embedded.set(url, await dataUrl(await (await fetchOk(url)).blob()));
+      embedded.set(url, await dataUrl(await (await fetchOk(url, ['image/', 'font/'])).blob()));
     } catch {
       // left as it is: the image shows without it
     }
   }));
-  out += css.replace(URL_VALUE, (whole, q, url) => (embedded.has(url) ? `url("${embedded.get(url)}")` : whole));
+  // A file of the reader's that wasn't embedded is left out, not linked: its
+  // URL names the folder it is in, and so often the reader's user name.
+  const local = (url) => /^(cssv:|http:\/\/cssv\.localhost\/)/i.test(url);
+  out += css.replace(URL_VALUE, (whole, q, url) => (embedded.has(url) ? `url("${embedded.get(url)}")` : local(url) ? 'url("")' : whole));
   return out;
 }
 
