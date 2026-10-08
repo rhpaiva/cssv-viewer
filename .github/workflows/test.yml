@@ -1,0 +1,104 @@
+# Checks the viewer on every push to main and every pull request.
+#
+# lint: shellcheck, rustfmt, clippy (pedantic, no warnings), cargo-deny
+#   (advisories, licenses, sources) and cargo-shear (unused dependencies).
+# rust: clippy and the Rust tests on Linux, macOS and Windows.
+# coverage: on Linux, every test, each part failing below 100% of lines,
+#   functions and branches. The UI's tests in Chromium and the AppImage
+#   build's in Node (c8), then the Rust tests and the real viewer in a
+#   virtual display (test/coverage-rust.js), which needs a nightly toolchain
+#   to count branches. The reports are kept as an artifact.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The nightly that counts branches: a newer one can count them differently.
+  RUST_NIGHTLY: nightly-2026-10-07
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 26, cache: npm }
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with: { toolchain: stable, components: 'rustfmt, clippy' }
+      - name: Tauri's system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev libxdo-dev
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with: { tool: 'cargo-deny,cargo-shear' }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with: { workspaces: src-tauri }
+      # The app embeds the renderer from node_modules when it compiles.
+      - run: npm ci
+      - run: npm run lint
+
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 26, cache: npm }
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with: { toolchain: stable, components: clippy }
+      - name: Tauri's system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev libxdo-dev
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with: { tool: cargo-nextest }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with: { workspaces: src-tauri }
+      - run: npm ci
+      - working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - working-directory: src-tauri
+        run: cargo nextest run --locked
+
+  coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 26, cache: npm }
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with: { toolchain: '${{ env.RUST_NIGHTLY }}', components: llvm-tools-preview }
+      - name: Tauri's system libraries, and what drives the real viewer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev libxdo-dev \
+            webkit2gtk-driver xvfb xdotool dbus
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with: { tool: 'cargo-llvm-cov,cargo-nextest' }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with: { workspaces: src-tauri }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run coverage:js
+      - run: npm run coverage:rust
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
