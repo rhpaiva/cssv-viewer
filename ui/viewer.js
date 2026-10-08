@@ -24,30 +24,38 @@ const tab = frameElement.dataset.tab;
 const win = webviewWindow.getCurrentWebviewWindow();
 const params = new URLSearchParams(location.search);
 const file = params.get('file');
-const remoteAllowed = params.get('remote') === '1' || (file !== null && prefs.remoteRemembered(file));
 const $ = (id) => document.getElementById(id);
 const mac = /Mac/.test(navigator.platform);
 const keys = (k) => (mac ? `⌘${k}` : `Ctrl+${k}`);
 
 // 11.2: a file opened from disk may load files from its own folder, but
-// nothing remote until the reader allows it for this file. The policy has to
-// be in place before the table loads anything; it can't be lifted again, so
-// allowing remote content reloads the window without it.
-if (!remoteAllowed) {
+// nothing remote until the reader allows it for this file's style block. The
+// policy has to be in place before the table loads anything; it can't be
+// lifted again, so allowing remote content reloads the tab with a policy
+// that lets it in. Scripts, plugins, frames and forms stay out either way.
+function protect(remote) {
   const local = 'cssv: http://cssv.localhost'; // the second form is how Windows webviews see cssv:
+  const from = remote ? `${local} http: https:` : local;
   const meta = document.createElement('meta');
   meta.httpEquiv = 'Content-Security-Policy';
   meta.content = [
     "default-src 'self'",
     "script-src 'self'",
-    `style-src 'self' 'unsafe-inline' ${local}`,
-    `img-src 'self' data: blob: ${local}`,
-    `font-src 'self' data: ${local}`,
-    `media-src ${local}`,
-    `connect-src 'self' ipc: http://ipc.localhost ${local}`,
+    `style-src 'self' 'unsafe-inline' ${from}`,
+    `img-src 'self' data: blob: ${from}`,
+    `font-src 'self' data: ${from}`,
+    `media-src ${from}`,
+    `connect-src 'self' ipc: http://ipc.localhost ${from}`, // the SVG fetches what the table loads (export.js)
+    "object-src 'none'",
+    "frame-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
   ].join('; ');
   document.head.prepend(meta);
 }
+// The home's previews never load remote content. A file's tab sets its
+// policy once it has read the file (open).
+if (file === null) protect(false);
 
 // What the window shows: the file's URL and text, its parsed model (for
 // find, copying and saving; null when it doesn't parse), and the table.
@@ -196,9 +204,27 @@ document.addEventListener('securitypolicyviolation', (event) => {
   showBlocked();
 });
 
+// Remote content is allowed for the file's style block as the reader saw it:
+// `remote` in the query string holds a SHA-256 of it until the tab opens
+// another file, and "Always allow" remembers it with the file. A file whose
+// style block changes asks again, as what it loads may have changed too.
+let styleHash = null;
+let remoteAllowed = false;
+
+async function hashStyle(text) {
+  let style;
+  try {
+    style = splitFile(text).style ?? '';
+  } catch {
+    style = text; // no closing fence: nothing renders, but compare it all
+  }
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(style));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function allowRemote(on, { remember = false } = {}) {
-  if (remember || !on) prefs.rememberRemote(file, on);
-  if (on) params.set('remote', '1');
+  if (remember || !on) prefs.rememberRemote(file, on ? styleHash : null);
+  if (on) params.set('remote', styleHash);
   else params.delete('remote');
   location.search = params;
 }
@@ -212,11 +238,12 @@ $('remote-deny').addEventListener('click', () => {
 });
 
 // While remote content is allowed, a chip in the toolbar says so and takes it back.
-if (file && remoteAllowed) {
+function showRemoteOn() {
+  const remembered = () => prefs.remoteRemembered(file, styleHash);
   $('remote-on').hidden = false;
   menuButton($('remote-on'), () => [
-    { heading: prefs.remoteRemembered(file) ? 'Allowed for this file' : 'Allowed until the window closes' },
-    ...(prefs.remoteRemembered(file) ? [] : [{ label: 'Always allow for this file', run: () => prefs.rememberRemote(file, true) }]),
+    { heading: remembered() ? 'Allowed for this file' : 'Allowed until the window closes' },
+    ...(remembered() ? [] : [{ label: 'Always allow for this file', run: () => prefs.rememberRemote(file, styleHash) }]),
     { label: 'Block remote content', run: () => allowRemote(false) },
   ], 'Remote content');
 }
@@ -432,12 +459,24 @@ async function open(path) {
   try {
     state.url = await core.invoke('open_file', { tab, path });
   } catch (error) {
+    protect(false);
     $('stage').replaceChildren();
     problems.push({ section: 'open', message: String(error), fatal: true });
     showProblems();
     return;
   }
   prefs.addRecent(path);
+
+  // Whether remote content is allowed depends on the style block, so the
+  // text comes before the policy, and the policy before the table (11.2).
+  try {
+    if (await readText()) styleHash = await hashStyle(state.text);
+  } catch {
+    // the table reports why it can't load the file
+  }
+  remoteAllowed = styleHash !== null && (params.get('remote') === styleHash || prefs.remoteRemembered(file, styleHash));
+  protect(remoteAllowed);
+  if (remoteAllowed) showRemoteOn();
 
   const table = document.createElement('cssv-table');
   state.table = table;
@@ -459,8 +498,6 @@ async function open(path) {
   }, { once: true });
   table.src = state.url; // relative URLs in the style block resolve against the file (4.3)
   $('stage').replaceChildren(table, marks);
-  await readText();
-  showProblems(); // problems found before the text arrived get their lines
 
   // Saving the file updates the table in place: unchanged rows, the scroll
   // position and the formats of unchanged cells stay as they are. The window
@@ -470,6 +507,15 @@ async function open(path) {
     if (payload !== tab) return;
     try {
       if (!(await readText())) return;
+      // Remote content was allowed for the style block as it was: another
+      // one shows in the tab reloaded without it, which asks again.
+      const hash = await hashStyle(state.text).catch(() => null);
+      if (remoteAllowed && hash !== styleHash) {
+        params.delete('remote');
+        location.search = params;
+        return;
+      }
+      styleHash = hash;
       table.update(shown(state.text));
       await table.ready;
       status(`Updated ${new Date().toLocaleTimeString()}`, { fade: true });

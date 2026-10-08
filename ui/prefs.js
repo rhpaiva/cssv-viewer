@@ -40,10 +40,14 @@ export function removeRecent(path) {
   set('recent', recent().filter((p) => p !== path));
 }
 
-const allowed = () => get('remote-allowed', []);
-export const remoteRemembered = (path) => allowed().includes(path);
+// Files allowed to load remote content, each as [path, the hash of the style
+// block it was allowed for] (viewer.js): another style block asks again. A
+// plain path, remembered before the hashes, asks again too.
+const allowed = () => get('remote-allowed', []).filter(Array.isArray);
+export const remoteRemembered = (path, hash) => allowed().some(([p, h]) => p === path && h === hash);
 
-export function rememberRemote(path, on) {
-  const rest = allowed().filter((p) => p !== path);
-  set('remote-allowed', on ? [...rest, path] : rest);
+/** Remembers that `path` may load remote content with the style block `hash`, or forgets it when `hash` is null. */
+export function rememberRemote(path, hash) {
+  const rest = allowed().filter(([p]) => p !== path);
+  set('remote-allowed', hash ? [...rest, [path, hash]] : rest);
 }
