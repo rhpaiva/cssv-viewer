@@ -1,6 +1,6 @@
 # CSSV Viewer
 
-A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shell around `<cssv-table>`: the window is a web view, and the table in it is rendered by `src/cssv-table.js` from the [`@rhpaiva/cssv`](https://www.npmjs.com/package/@rhpaiva/cssv) package, the same renderer the website uses, loaded unchanged.
+A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shell around `<cssv-table>`: the window is a web view, and the table in it is rendered by `src/cssv-table.js` from the [`@rhpaiva/cssv`](https://www.npmjs.com/package/@rhpaiva/cssv) package, the same renderer [cssv.dev](https://cssv.dev) uses, loaded unchanged. Section numbers (§) refer to the [CSSV specification](https://cssv.dev/spec.html).
 
 - One window, with a tab for each file, named after the file's title (§4.6) or, without one, the file's name. A file opened from the file manager or the command line while the viewer runs opens in a tab of the running viewer. From the viewer (**Open…**, a recent file, a drop), a file opens in the current tab when that's the home, and otherwise in a new tab after it. A file that's open already shows its tab.
 - Started without a file, the viewer opens its home: open a file, or pick one of the 8 latest from its card, which shows the table's first rows rendered from its own styles, held still, with the file's title and description (§4.6) and the table's size. **+** opens the home in a new tab.
@@ -31,7 +31,7 @@ The window is a WebKit web view on Linux and macOS and a Chromium one (WebView2)
 
 ## What a file may load
 
-[SPEC.md §11.2](../SPEC.md#112-remote-resources) asks renderers to say what a file's stylesheet may fetch. In the viewer:
+[§11.2](https://cssv.dev/spec.html#11-2-remote-resources) asks renderers to say what a file's stylesheet may fetch. In the viewer:
 
 - **Files in the opened file's folder and the folders below it**, through `@import` and `url()`, except hidden ones (a name that starts with `.`, or a file in such a folder). Relative URLs resolve against the file, as §4.3 requires. Nothing else on disk is reachable: `../brand.css` fails and is reported. A file in your home folder, or in a folder that holds it, may load only the files beside it, not the folders below. That holds for each tab on its own: a file can't reach the folder of a file open in another tab, because a tab's URLs carry a random id that only that tab's page knows.
 - **Nothing remote** until you allow it. Loading a remote stylesheet, font or image tells its server that the file was opened, and a stylesheet can send table values along (§11.3). When a file asks for remote resources, a bar under the toolbar lists each URL it asked for and what it is (a stylesheet, a font, an image). **Allow** reloads the tab with remote loads allowed until it opens another file; **Always allow for this file** remembers the choice; **Don't allow** keeps them blocked and hides the bar. Either choice holds for the file's style block as it was: when the style block changes, the viewer asks again. While remote content is allowed, a **Remote** button in the toolbar says so, and blocks it again.
@@ -43,7 +43,7 @@ You need [Rust](https://rustup.rs/), Node.js and the [system libraries Tauri nee
 ```
 npm install
 npm run dev                                  # the viewer, built in debug mode
-npm run dev -- -- -- "$PWD/../examples/budget.cssv"   # the same, opening a file (the path must be absolute)
+npm run dev -- -- -- /home/ana/budget.cssv  # the same, opening a file (the path must be absolute)
 npm run build                                # installers for this platform, in src-tauri/target/release/bundle/
 npm run appimage                             # dist/CSSV-Viewer-x86_64.AppImage (Linux; see below)
 ```
@@ -62,17 +62,13 @@ An AppImage registers nothing by itself. The home offers to set it up: that adds
 
 ## How it fits together
 
-- `src-tauri/tauri.conf.json` lists `ui/` and the package's `src/cssv-table.js` and `src/core.js` as the app's files. In this repository, `package.json` takes the package from the folder above (`file:..`), so the viewer always ships the repository's renderer.
+- `src-tauri/tauri.conf.json` lists `ui/` and the package's `src/cssv-table.js` and `src/core.js` as the app's files, and `package.json` takes the package from npm. To try a renderer that isn't published yet, put a checkout of [cssv](https://github.com/rhpaiva/cssv) beside this one and run `npm install --no-save ../cssv`, which links it in place of the published package without changing `package.json` or the lock file; `npm install` brings the published one back.
 - `src-tauri/src/main.rs` creates the window and serves each tab's file over a `cssv:` protocol whose URLs are the tab's id followed by the file's path (`cssv://localhost/<tab>/home/ana/budget.cssv`; `http://cssv.localhost/<tab>/C:/…` on Windows). It only serves a tab its own file's folder (What a file may load), reading off the window's thread and only regular files up to 256 MiB, and it watches the file to tell the tab when it changes. A home tab may also read the folders of its recent files, for their previews, by the same rules. Files the viewer is asked to open from outside wait in a queue until the window's page takes them. It saves what the page makes through a save dialog it opens itself, so the page can only write where you chose. `linux.rs` sets up the AppImage and the print dialog: the PDF's name, and the preview's paper, orientation and margins, since WebKitGTK takes those from GTK rather than from `@page` (and prints a landscape page blank, so landscape is a portrait page wider than it is tall).
 - `ui/index.html` and `tabs.js` are the window: the strip of tabs, each a frame showing `viewer.html` with one file or the home, and the command palette (`palette.js`), which lists the window's commands and those the current tab's page offers. A tab's page loads the first time the tab is shown, so files opened together don't all render at once. The frames reach the Rust side through the window's Tauri API, naming their tab.
 - `ui/viewer.js` sets `src` on a `<cssv-table>` to that URL, blocks remote loads with a Content Security Policy until they are allowed, lists the `cssv-error` events, and calls `update()` with the new text when the file changes. `find.js`, `source.js` (with `highlight.js`, a copy of the website's CSSV colors), `export.js` and `print.js` (the print preview, adapted from the web editor's) are the toolbar's tools, `menu.js` its menus (adapted from the web editor's), and `prefs.js` what it remembers in `localStorage`. `boot.js` runs before a page is first drawn, so a tab that opens a file doesn't show the home while it loads, and the window and its tabs have the chosen theme's colors from the start.
 
 Changing an imported stylesheet doesn't update the tab by itself; reload it.
 
-## Moving to its own repository
+## Releases
 
-Everything the viewer needs is in this folder. To make it a repository of its own:
-
-1. Take the renderer from npm: in `package.json`, change `"@rhpaiva/cssv": "file:.."` to the published version, such as `"^0.4.0"`, and run `npm install`.
-2. Change the links to `../SPEC.md` in this README to the spec's public URL.
-3. [`.github/workflows/build.yml`](.github/workflows/build.yml) builds the AppImage, the Linux packages and the macOS and Windows installers, and attaches them to a release for each `v*` tag. GitHub only runs workflows from the repository's root, so it starts working once this folder is one.
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds the AppImage, the Linux packages and the macOS and Windows installers for each pull request, and attaches them to a GitHub release for each `v*` tag.

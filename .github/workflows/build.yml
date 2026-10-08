@@ -1,7 +1,5 @@
 # Builds the viewer for Linux (AppImage, .deb, .rpm), macOS and Windows, and
-# attaches the files to a GitHub release for each v* tag. GitHub only runs
-# workflows from a repository's root: this one starts working once desktop/
-# is a repository of its own (README.md, "Moving to its own repository").
+# attaches the files to a GitHub release for each v* tag.
 name: Build
 
 on:

@@ -10,7 +10,7 @@
     "appimage": "node appimage/build.mjs"
   },
   "dependencies": {
-    "@rhpaiva/cssv": "file:.."
+    "@rhpaiva/cssv": "^0.5.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.1"

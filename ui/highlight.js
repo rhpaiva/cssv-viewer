@@ -1,6 +1,6 @@
 // Syntax colors for the source pane: a CSSV file, its style block and its
-// data. A copy of the CSSV part of the website's site/highlight.js, so the
-// viewer needs nothing outside desktop/.
+// data. A copy of the CSSV part of site/highlight.js in the cssv repository,
+// which the npm package doesn't include.
 
 const NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/; // SPEC 6.1
 const FENCE = /^﻿?---[ \t]*\r?\n?$/;      // SPEC 3.4
