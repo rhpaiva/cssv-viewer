@@ -379,7 +379,8 @@ function recentCard(path) {
 // time; a newer list stops an older one.
 let listing = 0;
 async function showRecent() {
-  const list = file === null ? prefs.recent().slice(0, HOME_CARDS) : [];
+  if (file !== null) return; // a file's tab has no home: its table took the place
+  const list = prefs.recent().slice(0, HOME_CARDS);
   $('recent').hidden = list.length === 0;
   $('home').classList.toggle('with-recent', list.length > 0);
   const cards = list.map(recentCard);
@@ -395,7 +396,8 @@ async function showRecent() {
 // file manager. Installed packages and other systems register themselves.
 let integration = { available: false, installed: false };
 function showSetup() {
-  $('setup').hidden = file !== null || !integration.available || integration.installed || prefs.get('setup-dismissed', false);
+  if (file !== null) return; // the offer is the home's
+  $('setup').hidden = !integration.available || integration.installed || prefs.get('setup-dismissed', false);
 }
 async function setIntegration(on) {
   try {

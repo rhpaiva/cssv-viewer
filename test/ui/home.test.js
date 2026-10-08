@@ -195,6 +195,39 @@ test('an AppImage offers to open .cssv files; setting it up says so, and "Not no
   assert.equal(await again.$eval('#setup', (el) => el.hidden), true);
 });
 
+test('in a file\'s tab, which has no home, a late answer about the AppImage and setting it up from the Open menu are no errors', async () => {
+  ctx.server.disk('/home/ana/budget.cssv', BUDGET);
+  const w = await ctx.open();
+  await w.tab();
+  // The answer comes once the file has taken the home's place.
+  await w.fake((f) => {
+    f.handlers.integration = () => new Promise((resolve) => { f.answer = () => resolve({ available: true, installed: false }); });
+  });
+  await w.fake((f) => { f.opens.push('/home/ana/budget.cssv'); f.emit('cssv-open'); });
+  const tab = await w.file();
+  await until(() => w.page.evaluate(() => typeof __fake.answer === 'function'));
+  await w.fake((f) => f.answer());
+  await tab.click('#open-more');
+  await tab.click('.menu-item:has-text("Open .cssv files with CSSV Viewer")');
+  await until(async () => (await tab.textContent('#status')) === 'CSSV Viewer now opens .cssv files');
+  assert.deepEqual(w.page.errors, []);
+});
+
+test('in a file\'s tab, clearing the recent files, or another tab adding one, is no error', async () => {
+  ctx.server.disk('/home/ana/budget.cssv', BUDGET);
+  ctx.server.disk('/home/ana/other.cssv', cssv(null, 'a', '1'));
+  const w = await ctx.open({ storage: { recent: ['/home/ana/old.cssv'] }, opens: ['/home/ana/budget.cssv'] });
+  const tab = await w.file();
+  await tab.click('#open-more');
+  await tab.click('.menu-item:has-text("Clear recent files")');
+  // Another file opens in a tab of its own, which makes it a recent file.
+  await w.fake((f) => { f.opens.push('/home/ana/other.cssv'); f.emit('cssv-open'); });
+  await w.file();
+  await until(() => tab.evaluate(() => JSON.parse(localStorage.getItem('cssv-viewer:recent'))?.[0] === '/home/ana/other.cssv'));
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(w.page.errors, []);
+});
+
 test('the set-up offer isn\'t shown in a file\'s tab, nor once set up', async () => {
   ctx.server.disk('/home/ana/budget.cssv', BUDGET);
   const w = await ctx.open({ opens: ['/home/ana/budget.cssv'], integration: { available: true, installed: false } });
