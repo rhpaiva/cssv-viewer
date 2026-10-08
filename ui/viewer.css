@@ -291,7 +291,7 @@ html.opening #home { display: none; }
 .hero h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
 .hero mark { background: linear-gradient(transparent 58%, var(--mark) 58% 94%, transparent 94%); color: inherit; font-family: var(--mono); font-size: 0.9em; }
 .hero p { margin: 0 0 14px; color: var(--muted); }
-.hero .hint { margin: 18px 0 0; font-size: 12px; }
+.hero .hint { margin: 18px 0 0; font-size: 12px; line-height: 2.1; }
 .setup { width: min(440px, 100%); padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .setup h2 { margin: 0 0 6px; font-size: 14px; }
 .setup p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }

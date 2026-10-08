@@ -73,3 +73,80 @@ body.window { overflow: hidden; }
 
 .frames { position: relative; flex: 1; min-height: 0; }
 .frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+
+/* The command palette (palette.js), over the window. It comes in and goes
+   out as the menus do: from @starting-style, and with display changing at
+   the end of its transition. Matched letters are marked as with a
+   highlighter. */
+.palette {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  padding: 56px 16px 16px;
+  background: rgb(20 18 14 / 0.16);
+  transition: opacity 0.14s ease-out, display 0.14s allow-discrete;
+}
+.palette:not(.open) { display: none; opacity: 0; }
+@starting-style { .palette.open { opacity: 0; } }
+.palette-box {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 100%);
+  max-height: min(540px, calc(100vh - 80px));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(40 30 10 / 0.08), 0 24px 60px -16px rgb(40 30 10 / 0.45);
+  overflow: hidden;
+  transition: transform 0.16s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.palette:not(.open) .palette-box { transform: translateY(-6px) scale(0.98); }
+@starting-style { .palette.open .palette-box { transform: translateY(-6px) scale(0.98); } }
+.palette-input {
+  padding: 14px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: 15px var(--sans);
+  outline: none;
+}
+.palette-input::placeholder { color: var(--muted); }
+.palette-list { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px 6px; }
+.palette-heading {
+  display: block;
+  padding: 10px 10px 4px 38px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  font-size: 13.5px;
+  cursor: default;
+}
+.palette-item[aria-selected="true"] { background: var(--bg-alt); }
+.palette-mark { display: grid; place-items: center; width: 18px; flex: none; color: var(--muted); font-weight: 700; }
+.palette-mark .i { width: 15px; height: 15px; }
+.palette-text { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; }
+.palette-group { flex: none; color: var(--muted); }
+.palette-label { flex: none; }
+.palette-label mark { background: var(--mark); color: #1c1a17; border-radius: 2px; }
+.palette-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 12px; }
+.palette-item kbd { flex: none; color: var(--muted); }
+.palette-empty { display: block; padding: 18px 10px; color: var(--muted); text-align: center; }
+.palette-foot { margin: 0; padding: 8px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.palette-foot kbd { font-size: 10.5px; }
+@media (prefers-reduced-motion: reduce) {
+  .palette, .palette-box { transition: none; }
+}

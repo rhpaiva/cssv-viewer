@@ -489,11 +489,12 @@ const source = createSource({
 
 $('find-open').addEventListener('click', () => find.toggle());
 
-$('plain').addEventListener('click', () => {
+function togglePlain() {
   state.plain = !state.plain;
   $('plain').setAttribute('aria-pressed', String(state.plain));
   state.table?.update(shown(state.text));
-});
+}
+$('plain').addEventListener('click', togglePlain);
 
 $('source').addEventListener('click', () => source.toggle());
 
@@ -512,7 +513,8 @@ function applyTheme(theme) {
 }
 applyTheme(prefs.get('theme', 'system'));
 prefs.watch('theme', applyTheme);
-menuButton($('theme'), () => THEMES.map(([value, label]) => ({
+// The menus' items, which the command palette offers too.
+const themeItems = () => THEMES.map(([value, label]) => ({
   label,
   radio: true,
   checked: prefs.get('theme', 'system') === value,
@@ -520,7 +522,8 @@ menuButton($('theme'), () => THEMES.map(([value, label]) => ({
     prefs.set('theme', value);
     applyTheme(value);
   },
-})), 'Light or dark');
+}));
+menuButton($('theme'), themeItems, 'Light or dark');
 
 // The language numbers display in (10.1): the system's, or one chosen to see
 // the file as readers elsewhere will. It is the table's lang attribute.
@@ -556,7 +559,7 @@ function applyLocale(locale) {
 }
 applyLocale(prefs.get('locale', ''));
 prefs.watch('locale', (locale) => applyLocale(locale ?? ''));
-menuButton($('numbers'), () => {
+function localeItems() {
   const current = prefs.get('locale', '');
   const item = (tag, label) => ({
     label,
@@ -573,7 +576,8 @@ menuButton($('numbers'), () => {
     { separator: true },
     ...LOCALES.map((tag) => item(tag, languageName(tag))),
   ];
-}, 'Language for numbers');
+}
+menuButton($('numbers'), localeItems, 'Language for numbers');
 
 // Copying: the cells a selection spans (Ctrl+C does it too), or the whole
 // table, as the file has the values.
@@ -586,7 +590,7 @@ async function copy(text, message) {
   }
 }
 const count = (n, what) => `${n.toLocaleString()} ${what}${n === 1 ? '' : 's'}`;
-menuButton($('copy'), () => {
+function copyItems() {
   const block = state.model && selectedBlock(state.table);
   const cells = block ? (block.rows[1] - block.rows[0] + 1) * (block.cols[1] - block.cols[0] + 1) : 0;
   const ready = !!state.model && !!state.table?.table;
@@ -602,7 +606,8 @@ menuButton($('copy'), () => {
     { label: 'Copy the table as Markdown', disabled: !ready, run: () => copy(state.table.toMarkdown(), 'Copied the table as Markdown') },
     { label: 'Copy the data as CSV', disabled: !state.model, run: () => copy(splitFile(state.text).data, 'Copied the data section') },
   ];
-}, 'Copy');
+}
+menuButton($('copy'), copyItems, 'Copy');
 document.addEventListener('copy', (event) => {
   const block = state.model && selectedBlock(state.table);
   if (!block) return; // text in one cell, or outside the table: the browser copies it
@@ -634,17 +639,17 @@ async function saveAs(kind) {
     status(`Could not save: ${error?.message ?? error}`);
   }
 }
-menuButton($('export'), () => {
+function saveItems() {
   const ready = !!state.table?.table;
   return [
     { label: 'Data as CSV…', disabled: !state.model, run: () => saveAs('csv') },
     { separator: true },
     { label: 'Image as PNG…', disabled: !ready, run: () => saveAs('png') },
     { label: 'Image as SVG…', disabled: !ready, run: () => saveAs('svg') },
-    { separator: true },
-    { label: 'Print or save as PDF…', shortcut: keys('P'), disabled: !ready, run: () => print.open() },
   ];
-}, 'Save as');
+}
+const printItem = () => ({ label: 'Print or save as PDF…', shortcut: keys('P'), disabled: !state.table?.table, run: () => print.open() });
+menuButton($('export'), () => [...saveItems(), { separator: true }, printItem()], 'Save as');
 
 // Printing shows a preview on paper first (print.js), then prints the table
 // alone (viewer.css), with the file's own @media print rules.
@@ -655,10 +660,32 @@ const print = createPrint({
 });
 $('print').addEventListener('click', () => print.open());
 
+// --- Command palette --------------------------------------------------------
+
+// What the window's command palette (Ctrl+K, palette.js) offers in this tab:
+// the toolbar's tools, from the same items as its menus, under the menu's
+// name where an item's label needs it. Only what this tab can do now.
+window.paletteCommands = () => {
+  const items = (group, list) => list.filter((i) => i.label && !i.disabled).map((i) => ({ ...i, group }));
+  return [
+    ...items('', file ? [
+      { label: 'Find in the values', shortcut: keys('F'), disabled: !state.model, run: () => find.open() },
+      { label: source.isOpen() ? 'Hide the source' : 'Show the source', shortcut: keys('U'), run: () => source.toggle() },
+      { label: state.plain ? 'Show the file with its styles' : 'Plain view: the data without its styles', run: togglePlain },
+      printItem(),
+      ...copyItems(),
+      { label: 'Reload the file', shortcut: keys('R'), run: () => location.reload() },
+    ] : []),
+    ...items('Save as', saveItems()),
+    ...items('Light or dark', themeItems()),
+    ...items('Numbers in', localeItems()),
+  ];
+};
+
 // --- Keyboard ---------------------------------------------------------------
 
 if (mac) {
-  $('mod').textContent = '⌘';
+  for (const el of document.querySelectorAll('.mod')) el.textContent = '⌘';
   for (const el of document.querySelectorAll('[title*="Ctrl+"]')) el.title = el.title.replaceAll('Ctrl+', '⌘');
 }
 

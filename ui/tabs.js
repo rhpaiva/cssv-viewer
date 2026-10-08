@@ -8,6 +8,7 @@
 // manager, the viewer started again); this page takes them when it starts
 // and when told there are more. A tab's page loads when the tab is first
 // shown, so files opened together don't all render at once.
+import { createPalette } from './palette.js';
 import * as prefs from './prefs.js';
 
 const { core, dialog, webview, webviewWindow } = window.__TAURI__;
@@ -215,7 +216,11 @@ function key(event) {
   const mod = mac ? event.metaKey : event.ctrlKey;
   // WebKitGTK names Shift+Tab "Unidentified"; its code is still Tab.
   const k = event.code === 'Tab' ? 'tab' : event.key.toLowerCase();
-  if (event.ctrlKey && !event.altKey && (k === 'tab' || k === 'pagedown' || k === 'pageup')) {
+  // While the palette is open, its box takes the keys; Ctrl+K closes it.
+  if (palette.isOpen()) {
+    if (!mod || event.altKey || k !== 'k') return false;
+    palette.close();
+  } else if (event.ctrlKey && !event.altKey && (k === 'tab' || k === 'pagedown' || k === 'pageup')) {
     const by = k === 'pageup' || (k === 'tab' && event.shiftKey) ? -1 : 1;
     // With Shift, PgUp and PgDn move the tab instead.
     if (event.shiftKey && k !== 'tab') move(current, by);
@@ -224,6 +229,7 @@ function key(event) {
   else if (k === 't') event.shiftKey ? reopen() : home();
   else if (k === 'w') closeTab(current);
   else if (k === 'o') choose();
+  else if (k === 'k') palette.open();
   else if (k === 'q') core.invoke('quit');
   else if (/^[1-9]$/.test(k)) {
     const tab = k === '9' ? tabs.at(-1) : tabs[Number(k) - 1];
@@ -231,6 +237,41 @@ function key(event) {
   } else return false;
   return true;
 }
+
+// The command palette (palette.js): the recent files, then the window's
+// commands and the current tab's (viewer.js), each with its shortcut. It
+// closes back to the tab's page.
+const shortcut = (k, shift = false) => (mac ? `${shift ? '⇧' : ''}⌘${k}` : `Ctrl+${shift ? 'Shift+' : ''}${k}`);
+function windowCommands() {
+  const i = tabs.indexOf(current);
+  const last = closed.at(-1);
+  return [
+    { label: 'Open a file…', shortcut: shortcut('O'), run: choose },
+    { label: 'New tab', shortcut: shortcut('T'), run: home },
+    { label: 'Close tab', shortcut: shortcut('W'), run: () => closeTab(current) },
+    last && { label: `Reopen ${nameOf(last.path)}`, shortcut: shortcut('T', true), run: reopen },
+    tabs.length > 1 && { label: 'Next tab', shortcut: 'Ctrl+Tab', run: () => step(1) },
+    tabs.length > 1 && { label: 'Previous tab', shortcut: 'Ctrl+Shift+Tab', run: () => step(-1) },
+    i > 0 && { label: 'Move tab left', shortcut: 'Ctrl+Shift+PgUp', run: () => move(current, -1) },
+    i < tabs.length - 1 && { label: 'Move tab right', shortcut: 'Ctrl+Shift+PgDn', run: () => move(current, 1) },
+    { label: 'Quit', shortcut: shortcut('Q'), run: () => core.invoke('quit') },
+  ].filter(Boolean);
+}
+const palette = createPalette({
+  sections: () => [
+    {
+      title: 'Recent files',
+      items: prefs.recent().filter((path) => path !== current?.path).map((path) => ({
+        file: true,
+        label: nameOf(path),
+        detail: path.slice(0, path.length - nameOf(path).length - 1),
+        run: () => open([path]),
+      })),
+    },
+    { title: 'Commands', items: [...windowCommands(), ...(current?.frame.contentWindow?.paletteCommands?.() ?? [])] },
+  ],
+  onClose: () => current?.frame.focus(),
+});
 
 // What a tab's page asks of the window (viewer.js).
 window.shell = { open, choose, key, titled };
