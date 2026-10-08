@@ -270,9 +270,11 @@ function recentItems() {
   ];
 }
 
-// The home lists recent files as cards, each with a preview: the file's
-// first rows, rendered from its own style block. The window may read a
-// recent file's folder for that (preview_file), and nothing remote.
+// The home lists the latest recent files as cards, each with a preview: the
+// file's first rows, rendered from its own style block. The window may read
+// a recent file's folder for that (preview_file), and nothing remote. The
+// Open menu and the command palette list all of them.
+const HOME_CARDS = 8;
 const PREVIEW_ROWS = 60;
 
 function h(tag, props = {}, ...children) {
@@ -364,7 +366,7 @@ function recentCard(path) {
 // time; a newer list stops an older one.
 let listing = 0;
 async function showRecent() {
-  const list = file === null ? prefs.recent() : [];
+  const list = file === null ? prefs.recent().slice(0, HOME_CARDS) : [];
   $('recent').hidden = list.length === 0;
   $('home').classList.toggle('with-recent', list.length > 0);
   const cards = list.map(recentCard);
