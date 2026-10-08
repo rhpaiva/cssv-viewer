@@ -1,5 +1,7 @@
 # Builds the viewer for Linux (AppImage, .deb, .rpm), macOS and Windows, and
-# attaches the files to a GitHub release for each v* tag.
+# attaches the files to a GitHub release for each v* tag. The tag is an
+# annotated one whose message is the version, a blank line and the
+# changelog; the changelog becomes the release's notes.
 name: Build
 
 on:
@@ -78,7 +80,18 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { path: artifacts }
-      - name: Release
+      - name: Release, with the tag's changelog as its notes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes $(find artifacts -type f)
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ref=$(gh api "repos/$GH_REPO/git/ref/tags/$TAG")
+          if [ "$(jq -r .object.type <<<"$ref")" != tag ]; then
+            echo "$TAG isn't an annotated tag, so it has no changelog" >&2
+            exit 1
+          fi
+          # The message without its first line, the version, and the blank one after it.
+          gh api "repos/$GH_REPO/git/tags/$(jq -r .object.sha <<<"$ref")" --jq .message | tail -n +3 > notes.md
+          mapfile -t files < <(find artifacts -type f)
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag "${files[@]}"
