@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What a viewer window may do: open a file dialog, print, zoom, switch between light and dark, and close itself.",
+  "description": "What a viewer window may do: open a file dialog, print, zoom, title itself after its tab, switch between light and dark, and close itself.",
   "windows": ["viewer-*"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
+    "core:window:allow-set-title",
     "core:window:allow-set-theme",
     "core:webview:allow-print",
     "core:webview:allow-set-webview-zoom",

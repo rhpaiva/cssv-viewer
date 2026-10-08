@@ -1,10 +1,13 @@
 // CSSV Viewer: a desktop shell around <cssv-table>, the reference renderer.
-// Each window shows one file. Section numbers refer to the CSSV spec.
+// The window holds tabs, each showing one file or the home. Section numbers
+// refer to the CSSV spec.
 //
-// The webview loads a file through the cssv: protocol, at a URL that mirrors
-// its path, so relative URLs in the style block resolve against the file
-// (4.3). The protocol only serves the opened file's folder and the folders
-// below it (11.2). Remote loads are blocked in the page itself (ui/viewer.js).
+// A tab loads its file through the cssv: protocol, at a URL made of the tab's
+// id and the file's path, so relative URLs in the style block resolve against
+// the file (4.3). The protocol serves a tab only its file's folder and the
+// folders below it (11.2). The id is random and only the tab's page knows it,
+// so a file can't reach the folder of another tab's file. Remote loads are
+// blocked in the page itself (ui/viewer.js).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -30,30 +33,53 @@ use tauri_plugin_window_state::StateFlags;
 /// Characters kept as they are in a path segment of a cssv: URL.
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'.').remove(b'_').remove(b'~');
 
-/// A window's file: the file, the folder the protocol serves, and the
-/// watcher that tells the window when the file changes. Dropping it stops
-/// the watcher.
+/// A tab's file: the file, the folder the protocol serves, and the watcher
+/// that tells the tab when the file changes. Dropping it stops the watcher.
 struct Opened {
     path: PathBuf,
     root: PathBuf,
     _watcher: Debouncer<RecommendedWatcher>,
 }
 
+/// A tab: the window it's in, and what the protocol serves it: its file's
+/// folder, or in a home tab the folders of the recent files it previews.
+struct Tab {
+    window: String,
+    opened: Option<Opened>,
+    previews: HashSet<PathBuf>,
+}
+
+impl Tab {
+    fn new(window: &str) -> Self {
+        Tab { window: window.to_string(), opened: None, previews: HashSet::new() }
+    }
+}
+
 #[derive(Default)]
 struct Viewer {
-    opened: Mutex<HashMap<String, Opened>>,
-    /// The folders of the recent files a home window shows previews of.
-    previews: Mutex<HashMap<String, HashSet<PathBuf>>>,
-    /// The page each window's print preview set up.
-    pages: Mutex<HashMap<String, Page>>,
-    /// Windows sent a file that their page hasn't opened yet.
-    pending: Mutex<HashSet<String>>,
+    /// The tabs, by the id the window's page gave them.
+    tabs: Mutex<HashMap<String, Tab>>,
+    /// The tab whose print preview each window shows, and the page it set up.
+    pages: Mutex<HashMap<String, (String, Page)>>,
+    /// The files each window has yet to open in tabs; None asks for the home.
+    opens: Mutex<HashMap<String, Vec<Option<PathBuf>>>>,
     windows: AtomicUsize,
 }
 
-/// The file a window shows, if any.
-fn file_of(app: &AppHandle, label: &str) -> Option<PathBuf> {
-    app.state::<Viewer>().opened.lock().unwrap().get(label).map(|o| o.path.clone())
+/// A tab id the page made: letters and digits, so it fits in a URL as it is.
+fn valid_tab(tab: &str) -> Result<(), String> {
+    if !tab.is_empty() && tab.len() <= 64 && tab.chars().all(|c| c.is_ascii_alphanumeric()) {
+        Ok(())
+    } else {
+        Err("Malformed tab id.".into())
+    }
+}
+
+/// The file a tab shows, if any.
+fn file_of(app: &AppHandle, tab: &str) -> Option<PathBuf> {
+    let viewer = app.state::<Viewer>();
+    let tabs = viewer.tabs.lock().unwrap();
+    tabs.get(tab)?.opened.as_ref().map(|o| o.path.clone())
 }
 
 /// The paper the print preview chose: "a4" or "letter", its orientation, and
@@ -65,16 +91,19 @@ pub struct Page {
     pub margin: f64,
 }
 
-/// The page a window's print preview set up, if it did.
+/// What a window prints: the page its print preview set up, and the file of
+/// the tab it's in.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn page_of(app: &AppHandle, label: &str) -> Option<Page> {
-    app.state::<Viewer>().pages.lock().unwrap().get(label).cloned()
+fn printing(app: &AppHandle, label: &str) -> Option<(Page, Option<PathBuf>)> {
+    let (tab, page) = app.state::<Viewer>().pages.lock().unwrap().get(label).cloned()?;
+    Some((page, file_of(app, &tab)))
 }
 
-/// The cssv: URL of a file. Webviews on Windows reach custom protocols
-/// through http://<scheme>.localhost instead.
-fn file_url(path: &Path) -> String {
-    let mut url = String::from(if cfg!(windows) { "http://cssv.localhost" } else { "cssv://localhost" });
+/// The cssv: URL of a file, for a tab. Webviews on Windows reach custom
+/// protocols through http://<scheme>.localhost instead.
+fn file_url(tab: &str, path: &Path) -> String {
+    let mut url = String::from(if cfg!(windows) { "http://cssv.localhost/" } else { "cssv://localhost/" });
+    url.push_str(tab);
     for component in path.components() {
         match component {
             Component::Prefix(prefix) => url.push_str(&format!("/{}", prefix.as_os_str().to_string_lossy())),
@@ -88,14 +117,15 @@ fn file_url(path: &Path) -> String {
     url
 }
 
-/// The inverse of file_url, from the path of a request URL.
-fn url_path(path: &str) -> Option<PathBuf> {
-    let decoded = percent_decode_str(path).decode_utf8().ok()?;
+/// The inverse of file_url, from the path of a request URL: the tab and the file.
+fn url_path(path: &str) -> Option<(&str, PathBuf)> {
+    let (tab, rest) = path.strip_prefix('/')?.split_once('/')?;
+    let decoded = percent_decode_str(rest).decode_utf8().ok()?;
     if cfg!(windows) {
-        // "/C:/Users/ana/file.cssv"
-        Some(PathBuf::from(decoded.trim_start_matches('/').replace('/', "\\")))
+        // "C:/Users/ana/file.cssv"
+        Some((tab, PathBuf::from(decoded.replace('/', "\\"))))
     } else {
-        Some(PathBuf::from(decoded.as_ref()))
+        Some((tab, PathBuf::from(format!("/{decoded}"))))
     }
 }
 
@@ -129,20 +159,20 @@ fn respond(status: StatusCode, content_type: &str, body: Vec<u8>) -> Response<Co
         .unwrap()
 }
 
-/// Serves a file to the window that requested it, if the file lies under that
-/// window's root (11.2), or, in a home window, under the folder of a recent
-/// file it previews.
+/// Serves a file to the tab its URL names, if the file lies under that tab's
+/// root (11.2), or, in a home tab, under the folder of a recent file it
+/// previews.
 fn serve(ctx: UriSchemeContext<'_, tauri::Wry>, request: Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
-    let viewer = ctx.app_handle().state::<Viewer>();
-    let label = ctx.webview_label();
-    let mut roots: Vec<PathBuf> = viewer.opened.lock().unwrap().get(label).map(|o| o.root.clone()).into_iter().collect();
-    roots.extend(viewer.previews.lock().unwrap().get(label).into_iter().flatten().cloned());
-    if roots.is_empty() {
-        return respond(StatusCode::FORBIDDEN, "text/plain", b"No file is open in this window.".to_vec());
-    }
-    let Some(path) = url_path(request.uri().path()) else {
+    let Some((tab, path)) = url_path(request.uri().path()) else {
         return respond(StatusCode::BAD_REQUEST, "text/plain", b"Malformed path.".to_vec());
     };
+    let roots: Vec<PathBuf> = match ctx.app_handle().state::<Viewer>().tabs.lock().unwrap().get(tab) {
+        Some(tab) if tab.window == ctx.webview_label() => tab.opened.iter().map(|o| o.root.clone()).chain(tab.previews.iter().cloned()).collect(),
+        _ => Vec::new(),
+    };
+    if roots.is_empty() {
+        return respond(StatusCode::FORBIDDEN, "text/plain", b"No file is open in this tab.".to_vec());
+    }
     let Ok(path) = std::fs::canonicalize(&path) else {
         return respond(StatusCode::NOT_FOUND, "text/plain", b"Not found.".to_vec());
     };
@@ -162,15 +192,13 @@ fn version(path: &Path) -> Option<(std::time::SystemTime, u64)> {
     Some((meta.modified().ok()?, meta.len()))
 }
 
-/// Opens `path` in the calling window: allows its folder on the protocol,
-/// watches it for changes, titles the window, and returns the file's URL.
+/// Opens `path` in a tab: allows its folder on the protocol, watches it for
+/// changes, and returns the file's URL.
 #[tauri::command]
-fn open_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, path: String) -> Result<String, String> {
-    // Whatever the window showed before is gone, even if this file fails.
-    viewer.pending.lock().unwrap().remove(window.label());
-    viewer.opened.lock().unwrap().remove(window.label());
-    viewer.previews.lock().unwrap().remove(window.label());
-    let _ = window.set_title("CSSV Viewer");
+fn open_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, tab: String, path: String) -> Result<String, String> {
+    valid_tab(&tab)?;
+    // Whatever the tab showed before is gone, even if this file fails.
+    viewer.tabs.lock().unwrap().insert(tab.clone(), Tab::new(window.label()));
 
     let path = std::path::absolute(PathBuf::from(&path)).map_err(|e| e.to_string())?;
     if !path.is_file() {
@@ -181,11 +209,12 @@ fn open_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, path: Stri
 
     // Editors often save by writing a new file and renaming it over the old
     // one, so watch the folder and pick out this file's events. Opening the
-    // file to read it is an event too, so the window only hears of a new
+    // file to read it is an event too, so the tab only hears of a new
     // version.
     let name = path.file_name().map(|n| n.to_owned());
     let app = window.app_handle().clone();
     let label = window.label().to_string();
+    let changed = tab.clone();
     let watched = path.clone();
     let mut last = version(&path);
     let mut watcher = new_debouncer(Duration::from_millis(150), move |result: DebounceEventResult| {
@@ -196,22 +225,38 @@ fn open_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, path: Stri
         let now = version(&watched);
         if now.is_some() && now != last {
             last = now;
-            let _ = app.emit_to(label.as_str(), "cssv-file-changed", ());
+            let _ = app.emit_to(label.as_str(), "cssv-file-changed", &changed);
         }
     })
     .map_err(|e| e.to_string())?;
     watcher.watcher().watch(folder, RecursiveMode::NonRecursive).map_err(|e| e.to_string())?;
 
-    let opened = Opened { path: path.clone(), root, _watcher: watcher };
-    viewer.opened.lock().unwrap().insert(window.label().to_string(), opened);
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let _ = window.set_title(&format!("{name} — CSSV Viewer"));
-    Ok(file_url(&path))
+    // A tab closed meanwhile drops the watcher with it.
+    if let Some(open) = viewer.tabs.lock().unwrap().get_mut(&tab) {
+        open.opened = Some(Opened { path: path.clone(), root, _watcher: watcher });
+    }
+    Ok(file_url(&tab, &path))
+}
+
+/// Forgets a closed tab: its folder is no longer served, nor its file watched.
+#[tauri::command]
+fn close_tab(viewer: tauri::State<'_, Viewer>, tab: String) {
+    viewer.tabs.lock().unwrap().remove(&tab);
+    viewer.pages.lock().unwrap().retain(|_, (printing, _)| *printing != tab);
+}
+
+/// The files the window has been asked to open since it last asked, in order;
+/// None asks for the home.
+#[tauri::command]
+fn take_opens(window: WebviewWindow, viewer: tauri::State<'_, Viewer>) -> Vec<Option<String>> {
+    let opens = viewer.opens.lock().unwrap().remove(window.label()).unwrap_or_default();
+    opens.into_iter().map(|path| path.map(|p| p.to_string_lossy().into_owned())).collect()
 }
 
 /// Saves what the page made (the data as CSV, an image of the table) where
 /// the reader chooses. The dialog runs here, so the page can only write to a
-/// path the reader picked. The body is the file's bytes; the headers name it.
+/// path the reader picked. The body is the file's bytes; the headers name it
+/// and the tab it comes from, whose file's folder the dialog starts in.
 /// Returns the path written, or None if the reader cancelled.
 #[tauri::command]
 async fn save_file(window: WebviewWindow, request: tauri::ipc::Request<'_>) -> Result<Option<String>, String> {
@@ -224,7 +269,7 @@ async fn save_file(window: WebviewWindow, request: tauri::ipc::Request<'_>) -> R
     };
     let (name, kind, ext) = (header("x-name"), header("x-kind"), header("x-ext"));
     let mut dialog = window.dialog().file().set_parent(&window).set_file_name(&name).add_filter(&kind, &[ext.as_str()]);
-    if let Some(folder) = file_of(window.app_handle(), window.label()).as_deref().and_then(Path::parent) {
+    if let Some(folder) = file_of(window.app_handle(), &header("x-tab")).as_deref().and_then(Path::parent) {
         dialog = dialog.set_directory(folder);
     }
     let Some(chosen) = dialog.blocking_save_file() else { return Ok(None) };
@@ -233,25 +278,28 @@ async fn save_file(window: WebviewWindow, request: tauri::ipc::Request<'_>) -> R
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
-/// Lets a home window read a recent file and its folder, for the file's
+/// Lets a home tab read a recent file and its folder, for the file's
 /// preview, and returns the file's URL.
 #[tauri::command]
-fn preview_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, path: String) -> Result<String, String> {
+fn preview_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, tab: String, path: String) -> Result<String, String> {
+    valid_tab(&tab)?;
     let path = PathBuf::from(&path);
     if !path.is_file() {
         return Err("Not found.".into());
     }
     let folder = path.parent().ok_or("The file has no folder.")?;
     let root = std::fs::canonicalize(folder).map_err(|e| e.to_string())?;
-    viewer.previews.lock().unwrap().entry(window.label().to_string()).or_default().insert(root);
-    Ok(file_url(&path))
+    let mut tabs = viewer.tabs.lock().unwrap();
+    tabs.entry(tab.clone()).or_insert_with(|| Tab::new(window.label())).previews.insert(root);
+    Ok(file_url(&tab, &path))
 }
 
-/// Keeps the print preview's page for the print dialog, which on Linux
-/// takes its paper and orientation from GTK rather than from @page.
+/// Keeps the print preview's page, and the tab it shows, for the print
+/// dialog, which on Linux takes its paper and orientation from GTK rather
+/// than from @page.
 #[tauri::command]
-fn set_page(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, page: Page) {
-    viewer.pages.lock().unwrap().insert(window.label().to_string(), page);
+fn set_page(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, tab: String, page: Page) {
+    viewer.pages.lock().unwrap().insert(window.label().to_string(), (tab, page));
 }
 
 /// Quits the viewer, closing every window.
@@ -290,38 +338,22 @@ pub struct Integration {
     installed: bool,
 }
 
-/// Shows `path` in a window that has no file yet, or in a new window. The page
-/// reads the file to open from its query string.
+/// Shows `path` in a tab of the viewer's window, or the home when `path` is
+/// None, making the window if there is none. The window's page takes the
+/// files from `opens` when it starts, and when told that there are more.
 fn show(app: &AppHandle, path: Option<PathBuf>) {
-    let query = path.map(|p| format!("file={}", utf8_percent_encode(&p.to_string_lossy(), NON_ALPHANUMERIC)));
     let viewer = app.state::<Viewer>();
-    if let Some(query) = &query {
-        let opened = viewer.opened.lock().unwrap();
-        let mut pending = viewer.pending.lock().unwrap();
-        let empty = app
-            .webview_windows()
-            .into_values()
-            .find(|w| !opened.contains_key(w.label()) && !pending.contains(w.label()));
-        if let Some(window) = empty {
-            if let Ok(mut url) = window.url() {
-                url.set_query(Some(query));
-                pending.insert(window.label().to_string());
-                let _ = window.navigate(url);
-                let _ = window.set_focus();
-                return;
-            }
-        }
+    if let Some(window) = app.webview_windows().into_values().next() {
+        viewer.opens.lock().unwrap().entry(window.label().to_string()).or_default().push(path);
+        let _ = window.emit_to(window.label(), "cssv-open", ());
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        return;
     }
     let n = viewer.windows.fetch_add(1, Ordering::Relaxed) + 1;
     let label = format!("viewer-{n}");
-    if query.is_some() {
-        viewer.pending.lock().unwrap().insert(label.clone());
-    }
-    let page = match &query {
-        Some(query) => format!("index.html?{query}"),
-        None => "index.html".to_string(),
-    };
-    let built = WebviewWindowBuilder::new(app, label, WebviewUrl::App(page.into()))
+    viewer.opens.lock().unwrap().insert(label.clone(), vec![path]);
+    let built = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
         .title("CSSV Viewer")
         .inner_size(1100.0, 760.0)
         .min_inner_size(420.0, 300.0)
@@ -336,19 +368,20 @@ fn show(app: &AppHandle, path: Option<PathBuf>) {
     }
 }
 
-/// File paths among command-line arguments, relative to `cwd`.
+/// File paths among command-line arguments, relative to `cwd`. They're made
+/// absolute without following links, so a file opened twice is found open.
 fn paths_in(args: impl IntoIterator<Item = String>, cwd: &Path) -> Vec<PathBuf> {
     args.into_iter()
         .filter(|a| !a.starts_with('-'))
-        .map(|a| cwd.join(a))
+        .filter_map(|a| std::path::absolute(cwd.join(a)).ok())
         .filter(|p| p.is_file())
         .collect()
 }
 
 fn main() {
     tauri::Builder::default()
-        // Starting the viewer again shows its files, or an empty window, in the
-        // running instance.
+        // Starting the viewer again shows its files, or the home, in the
+        // running instance's window.
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let paths = paths_in(args.into_iter().skip(1), Path::new(&cwd));
             if paths.is_empty() {
@@ -359,8 +392,8 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        // Each window opens where and as large as the window with its number
-        // was last time (Wayland doesn't let apps place windows).
+        // The window opens where and as large as it was last time (Wayland
+        // doesn't let apps place windows).
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
@@ -368,14 +401,15 @@ fn main() {
         )
         .manage(Viewer::default())
         .register_uri_scheme_protocol("cssv", serve)
-        .invoke_handler(tauri::generate_handler![open_file, preview_file, save_file, set_page, quit, integration, set_integration])
+        .invoke_handler(tauri::generate_handler![
+            open_file, close_tab, take_opens, preview_file, save_file, set_page, quit, integration, set_integration
+        ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 let viewer = window.state::<Viewer>();
-                viewer.pending.lock().unwrap().remove(window.label());
-                viewer.opened.lock().unwrap().remove(window.label());
-                viewer.previews.lock().unwrap().remove(window.label());
+                viewer.tabs.lock().unwrap().retain(|_, tab| tab.window != window.label());
                 viewer.pages.lock().unwrap().remove(window.label());
+                viewer.opens.lock().unwrap().remove(window.label());
             }
         })
         .setup(|app| {

@@ -1,11 +1,14 @@
-// CSSV Viewer: one file per window, rendered by <cssv-table>, the reference
-// renderer, as published in the @rhpaiva/cssv package. Section numbers refer
-// to the CSSV spec.
+// CSSV Viewer: a tab, showing one file rendered by <cssv-table>, the
+// reference renderer, as published in the @rhpaiva/cssv package, or the home.
+// Section numbers refer to the CSSV spec.
 //
-// The window's file comes from the query string (?file=<path>), so opening
-// another file is a navigation and a reload shows the file again. The Rust
-// side (src-tauri) serves the file and its folder over the cssv: protocol and
-// says when the file changes.
+// The window's page (index.html, tabs.js) holds the tabs, each this page in a
+// frame of its own, and the tab's file comes from the query string
+// (?file=<path>): opening another file in the tab is a navigation, and a
+// reload shows the file again. The frame reaches the Rust side (src-tauri)
+// through the window's Tauri API, naming itself by its tab id. The Rust side
+// serves the file and its folder to this tab over the cssv: protocol and says
+// when the file changes.
 import './cssv-table.js';
 import { parse, rewriteCssUrls, splitFile } from './core.js';
 import { blockRows, encode, pngOf, save, selectedBlock, svgOf, tableRows, tsv } from './export.js';
@@ -15,7 +18,9 @@ import * as prefs from './prefs.js';
 import { createPrint } from './print.js';
 import { createSource } from './source.js';
 
-const { core, dialog, webview, webviewWindow } = window.__TAURI__;
+const { core, webviewWindow } = parent.__TAURI__;
+const { shell } = parent;
+const tab = frameElement.dataset.tab;
 const win = webviewWindow.getCurrentWebviewWindow();
 const params = new URLSearchParams(location.search);
 const file = params.get('file');
@@ -218,18 +223,9 @@ if (file && remoteAllowed) {
 
 // --- Opening files ----------------------------------------------------------
 
-function go(path) {
-  location.search = new URLSearchParams({ file: path });
-}
-
-async function choose() {
-  const path = await dialog.open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: 'CSSV', extensions: ['cssv'] }, { name: 'CSV', extensions: ['csv'] }, { name: 'All files', extensions: ['*'] }],
-  });
-  if (typeof path === 'string') go(path);
-}
+// The window decides where a file opens (tabs.js): its tab if it's open, this
+// tab if it's the home, or a new tab.
+const go = (path) => shell.open([path]);
 
 const split = (path) => {
   const parts = path.split(/[\\/]/);
@@ -292,7 +288,7 @@ async function fillCard(card, path) {
   const table = card.querySelector('cssv-table');
   const stats = card.querySelector('.card-stats');
   try {
-    const url = await core.invoke('preview_file', { path });
+    const url = await core.invoke('preview_file', { tab, path });
     const text = await (await fetch(url, { cache: 'no-store' })).text();
     const model = parse(text);
     card.querySelector('.card-desc').textContent = summary(text);
@@ -311,7 +307,15 @@ function recentCard(path) {
   const table = document.createElement('cssv-table');
   setLang(table, prefs.get('locale', ''));
   const card = h('article', { className: 'card', role: 'listitem' },
-    h('a', { className: 'card-open', href: `?${new URLSearchParams({ file: path })}`, title: path },
+    h('a', {
+      className: 'card-open',
+      href: `?${new URLSearchParams({ file: path })}`,
+      title: path,
+      onclick: (event) => {
+        event.preventDefault();
+        go(path);
+      },
+    },
       h('div', { className: 'thumb', inert: true }, table),
       h('div', { className: 'card-body' },
         h('strong', { className: 'card-name', textContent: name }),
@@ -373,8 +377,8 @@ $('setup-no').addEventListener('click', () => {
   showSetup();
 });
 
-$('open').addEventListener('click', choose);
-$('open-empty').addEventListener('click', choose);
+$('open').addEventListener('click', () => shell.choose());
+$('open-empty').addEventListener('click', () => shell.choose());
 menuButton($('open-more'), () => [
   { heading: 'Recent files' },
   ...recentItems(),
@@ -385,13 +389,6 @@ menuButton($('open-more'), () => [
       : { label: 'Open .cssv files with CSSV Viewer', run: () => setIntegration(true) },
   ] : []),
 ], 'Open');
-
-// Dropping a file on the window opens it there.
-webview.getCurrentWebview().onDragDropEvent(({ payload }) => {
-  if (payload.type === 'enter' || payload.type === 'over') $('drop').hidden = false;
-  else $('drop').hidden = true;
-  if (payload.type === 'drop' && payload.paths.length > 0) go(payload.paths[0]);
-});
 
 // --- The table --------------------------------------------------------------
 
@@ -428,7 +425,7 @@ async function open(path) {
   document.title = stem(path); // what Print and "Save as PDF" name the file
 
   try {
-    state.url = await core.invoke('open_file', { path });
+    state.url = await core.invoke('open_file', { tab, path });
   } catch (error) {
     $('stage').replaceChildren();
     problems.push({ section: 'open', message: String(error), fatal: true });
@@ -461,8 +458,11 @@ async function open(path) {
   showProblems(); // problems found before the text arrived get their lines
 
   // Saving the file updates the table in place: unchanged rows, the scroll
-  // position and the formats of unchanged cells stay as they are.
-  win.listen('cssv-file-changed', async () => {
+  // position and the formats of unchanged cells stay as they are. The window
+  // hears of every tab's changes; the listener lives in the window's page, so
+  // it goes when this page does.
+  const unlisten = await win.listen('cssv-file-changed', async ({ payload }) => {
+    if (payload !== tab) return;
     try {
       if (!(await readText())) return;
       table.update(shown(state.text));
@@ -472,6 +472,7 @@ async function open(path) {
       // the same: wait for the next change
     }
   });
+  addEventListener('pagehide', unlisten);
 }
 
 // --- Toolbar ----------------------------------------------------------------
@@ -614,14 +615,14 @@ async function saveAs(kind) {
   try {
     let path;
     if (kind === 'csv') {
-      path = await save(encode(splitFile(state.text).data), { name: `${name}.csv`, kind: 'CSV', ext: 'csv' });
+      path = await save(encode(splitFile(state.text).data), { tab, name: `${name}.csv`, kind: 'CSV', ext: 'csv' });
     } else if (kind === 'svg') {
       status('Drawing the table…');
       const { svg } = await svgOf(state.table, options);
-      path = await save(encode(svg), { name: `${name}.svg`, kind: 'SVG image', ext: 'svg' });
+      path = await save(encode(svg), { tab, name: `${name}.svg`, kind: 'SVG image', ext: 'svg' });
     } else {
       status('Drawing the table…');
-      path = await save(await pngOf(state.table, options), { name: `${name}.png`, kind: 'PNG image', ext: 'png' });
+      path = await save(await pngOf(state.table, options), { tab, name: `${name}.png`, kind: 'PNG image', ext: 'png' });
     }
     status(path ? `Saved ${split(path).name}` : '', { fade: true });
   } catch (error) {
@@ -643,6 +644,7 @@ menuButton($('export'), () => {
 // Printing shows a preview on paper first (print.js), then prints the table
 // alone (viewer.css), with the file's own @media print rules.
 const print = createPrint({
+  tab,
   host: () => state.table,
   source: () => [state.text, { plain: state.plain, base: state.url }],
 });
@@ -655,18 +657,17 @@ if (mac) {
   for (const el of document.querySelectorAll('[title*="Ctrl+"]')) el.title = el.title.replaceAll('Ctrl+', '⌘');
 }
 
+// The window's keys (tabs, Open, Quit) come first (tabs.js), then the tab's.
 addEventListener('keydown', (event) => {
   const mod = mac ? event.metaKey : event.ctrlKey;
   const key = event.key.toLowerCase();
-  if (event.key === 'F3' && !print.isOpen()) find.next(event.shiftKey ? -1 : 1);
+  if (shell.key(event)) event.preventDefault();
+  else if (event.key === 'F3' && !print.isOpen()) find.next(event.shiftKey ? -1 : 1);
   else if (event.key === 'F5') location.reload();
   else if (!mod || event.altKey) return;
   else if (key === 'p' && file) print.request();
-  else if (print.isOpen() && key !== 'w' && key !== 'q') return; // the rest wait for the preview to close
-  else if (key === 'o') choose();
+  else if (print.isOpen()) return; // the rest wait for the preview to close
   else if (key === 'r') location.reload();
-  else if (key === 'w') win.close();
-  else if (key === 'q') core.invoke('quit');
   else if (key === 'f' && file) find.open();
   else if (key === 'u' && file) source.toggle();
   else return;

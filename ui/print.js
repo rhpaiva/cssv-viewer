@@ -7,7 +7,7 @@
 // window's own table (viewer.css) at the paper, scale and margins chosen here.
 import { rewriteCssUrls, splitFile } from './core.js';
 
-const { core } = window.__TAURI__;
+const { core } = parent.__TAURI__; // the window's, as a tab is a frame (viewer.js)
 const $ = (id) => document.getElementById(id);
 const PAPER = { a4: ['A4', 210, 297], letter: ['Letter', 215.9, 279.4] };
 const PX = 96 / 25.4; // CSS pixels per millimeter
@@ -54,10 +54,10 @@ function printText(text, { plain, base }) {
 }
 
 /**
- * `host()` is the window's <cssv-table>; `source()` gives the file's text,
- * whether the window shows it plain, and its URL.
+ * `tab` is the tab's id; `host()` is its <cssv-table>; `source()` gives the
+ * file's text, whether the tab shows it plain, and its URL.
  */
-export function createPrint({ host, source }) {
+export function createPrint({ tab, host, source }) {
   const view = $('print-view');
   let table = null; // the preview's <cssv-table>, new each time it opens
   const size = $('print-paper');
@@ -109,7 +109,7 @@ export function createPrint({ host, source }) {
     // sets up with it; a size in @page as well turns a landscape page blank.
     const paper = LINUX ? '' : `size: ${name} ${landscape ? 'landscape' : 'portrait'}; `;
     pageRule.textContent = `@page { ${paper}margin: ${Number(margins.value)}mm; }`;
-    core.invoke('set_page', { page: { paper: size.value, landscape, margin: Number(margins.value) } }).catch(() => {});
+    core.invoke('set_page', { tab, page: { paper: size.value, landscape, margin: Number(margins.value) } }).catch(() => {});
   }
 
   // The preview is laid out while still transparent, then comes in, so its

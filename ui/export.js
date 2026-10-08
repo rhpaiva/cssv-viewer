@@ -3,7 +3,7 @@
 // display, so a spreadsheet gets 1234.5 rather than "1,234.50".
 import { DEFAULT_CSS, readCssString, rewriteCssUrls, splitFile } from './core.js';
 
-const { core } = window.__TAURI__;
+const { core } = parent.__TAURI__; // the window's, as a tab is a frame (viewer.js)
 
 // --- Copying ------------------------------------------------------------------
 
@@ -57,11 +57,12 @@ export function blockRows(model, { rows, cols }) {
 
 /**
  * Asks where to save `bytes` and writes them there; the dialog runs on the
- * Rust side, so the page can only write where the reader chose. Returns the
- * path, or null if the reader cancelled.
+ * Rust side, so the page can only write where the reader chose. The dialog
+ * starts in the folder of `tab`'s file. Returns the path, or null if the
+ * reader cancelled.
  */
-export function save(bytes, { name, kind, ext }) {
-  const headers = { 'x-name': encodeURIComponent(name), 'x-kind': encodeURIComponent(kind), 'x-ext': ext };
+export function save(bytes, { tab, name, kind, ext }) {
+  const headers = { 'x-tab': tab, 'x-name': encodeURIComponent(name), 'x-kind': encodeURIComponent(kind), 'x-ext': ext };
   return core.invoke('save_file', bytes, { headers });
 }
 

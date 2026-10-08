@@ -1,0 +1,75 @@
+/* The window (tabs.js): a strip of tabs over the current tab's page, which
+   brings its own toolbar. The current tab joins that toolbar, sharing its
+   color, and is marked in the highlighter's yellow. Colors come from
+   viewer.css. */
+body.window { overflow: hidden; }
+
+.strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 6px 8px 0;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* The tabs reach over the strip's bottom line, which the current tab hides. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  margin-bottom: -1px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+/* A width rather than a flex basis: WebKit sizes the strip from its tabs'
+   widths, and a basis alone left each tab as narrow as its name. */
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 auto;
+  width: 210px;
+  min-width: 96px;
+  height: 34px;
+  padding: 0 4px 0 12px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: default;
+}
+.tab:hover { background: var(--hover); color: var(--text); }
+.tab[aria-selected="true"] {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: inset 0 3px 0 -1px var(--mark);
+}
+.tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -3px; }
+.tab-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tab-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+}
+.tab-close .i { width: 14px; height: 14px; }
+.tab:hover .tab-close, .tab[aria-selected="true"] .tab-close { opacity: 1; }
+.tab-close:hover { background: var(--hover); color: var(--text); }
+
+.new-tab { flex: none; margin-bottom: 3px; }
+
+.frames { position: relative; flex: 1; min-height: 0; }
+.frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }

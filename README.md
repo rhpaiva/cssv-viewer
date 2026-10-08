@@ -2,28 +2,28 @@
 
 A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shell around `<cssv-table>`: the window is a web view, and the table in it is rendered by `src/cssv-table.js` from the [`@rhpaiva/cssv`](https://www.npmjs.com/package/@rhpaiva/cssv) package, the same renderer the website uses, loaded unchanged.
 
-- One window per file. Opening a file from the file manager or the command line while the viewer runs opens it in the running viewer.
-- Started without a file, the viewer opens its home: open a file, or pick a recent one from its card, which shows the table's first rows rendered from its own styles, held still, with the style block's opening comment and the table's size.
-- Saving the file updates the window in place: unchanged rows and the scroll position stay.
-- Drop a file on a window to open it there.
+- One window, with a tab for each file. A file opened from the file manager or the command line while the viewer runs opens in a tab of the running viewer. From the viewer (**Open…**, a recent file, a drop), a file opens in the current tab when that's the home, and otherwise in a new tab after it. A file that's open already shows its tab.
+- Started without a file, the viewer opens its home: open a file, or pick a recent one from its card, which shows the table's first rows rendered from its own styles, held still, with the style block's opening comment and the table's size. **+** shows the home in a tab.
+- Saving the file updates its tab in place, in the background too: unchanged rows and the scroll position stay.
+- Drop files on the window to open them in tabs.
 - Problems the renderer reports (a bad `--cssv-format`, an import that failed, a malformed file) are listed under the toolbar, with the section of the spec they come from and, where the file says it, a link to the line.
-- Windows open at the size and place they had (Wayland doesn't let apps place windows, so there only the size).
+- The window opens at the size and place it had (Wayland doesn't let apps place windows, so there only the size).
 
 ## The toolbar
 
 | | |
 |---|---|
-| **Open…** and **▾** | Opens a file (<kbd>Ctrl</kbd> <kbd>O</kbd>). The arrow lists recent files and, in the Linux AppImage, sets the viewer up to open `.cssv` files. |
+| **Open…** and **▾** | Opens files (<kbd>Ctrl</kbd> <kbd>O</kbd>). The arrow lists recent files and, in the Linux AppImage, sets the viewer up to open `.cssv` files. |
 | Find | Searches the values as the file has them, column names included, and marks the cells that hold them (<kbd>Ctrl</kbd> <kbd>F</kbd>; <kbd>Enter</kbd> and <kbd>Shift</kbd> <kbd>Enter</kbd> move between matches; the button or <kbd>Esc</kbd> closes it). `1234.5` finds the cell that shows `1,234.50`. |
 | Plain view | The data without its style block, in the renderer's default styles: what the file holds when its styles hide or rearrange it. |
 | Source | The file's text beside the table, with line numbers (<kbd>Ctrl</kbd> <kbd>U</kbd>). Drag the divider to resize it. |
-| Light or dark | Follows the system, or makes the window light or dark. The table's `light-dark()` values and `prefers-color-scheme` queries follow it, in every window. |
+| Light or dark | Follows the system, or makes the window light or dark. The table's `light-dark()` values and `prefers-color-scheme` queries follow it, in every tab. |
 | Language for numbers | The language numbers display in (§10.1): the system's, or another one, to see a file as readers elsewhere will. |
 | Copy | The selected cells (also <kbd>Ctrl</kbd> <kbd>C</kbd> on a selection that spans cells), the whole table for spreadsheets (tab-separated), the table as Markdown (Appendix B), or the data section as CSV. Copies carry the values as the file has them, not their formatted display, except Markdown. |
 | Save as | The data as CSV, or a picture of the table as it shows: PNG, or SVG, which keeps its animations. |
 | Print | A preview first (<kbd>Ctrl</kbd> <kbd>P</kbd>): the table on paper as it will print, with the file's own `@media print` rules, and the paper (A4 or Letter), orientation, scale (fit to the page width, or actual size), margins and background colors. **Print…** (or <kbd>Ctrl</kbd> <kbd>P</kbd> again) prints the table alone. Print to a PDF from the print dialog; on Linux it's named after the file, goes next to it, and is on the preview's paper. The paper is white in either theme. |
 
-On macOS, <kbd>⌘</kbd> takes the place of <kbd>Ctrl</kbd>. <kbd>Ctrl</kbd> <kbd>R</kbd> reloads, <kbd>Ctrl</kbd> <kbd>+</kbd> and <kbd>Ctrl</kbd> <kbd>-</kbd> zoom, <kbd>Ctrl</kbd> <kbd>W</kbd> closes the window and <kbd>Ctrl</kbd> <kbd>Q</kbd> quits.
+<kbd>Ctrl</kbd> <kbd>T</kbd> shows the home in a tab and <kbd>Ctrl</kbd> <kbd>W</kbd> closes the tab (the last one closes the window). <kbd>Ctrl</kbd> <kbd>Tab</kbd> and <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Tab</kbd>, or <kbd>Ctrl</kbd> <kbd>PgDn</kbd> and <kbd>Ctrl</kbd> <kbd>PgUp</kbd>, move between tabs; <kbd>Ctrl</kbd> <kbd>1</kbd> to <kbd>8</kbd> show a tab by its place, and <kbd>Ctrl</kbd> <kbd>9</kbd> the last. <kbd>Ctrl</kbd> <kbd>R</kbd> reloads the tab, <kbd>Ctrl</kbd> <kbd>+</kbd> and <kbd>Ctrl</kbd> <kbd>-</kbd> zoom and <kbd>Ctrl</kbd> <kbd>Q</kbd> quits. On macOS, <kbd>⌘</kbd> takes the place of <kbd>Ctrl</kbd>, except in <kbd>Ctrl</kbd> <kbd>Tab</kbd>, <kbd>Ctrl</kbd> <kbd>PgDn</kbd> and <kbd>Ctrl</kbd> <kbd>PgUp</kbd>.
 
 The window is a WebKit web view on Linux and macOS and a Chromium one (WebView2) on Windows, so CSS that only Chromium supports so far, such as typed `attr()`, shows only on Windows. Some limits of WebKit show up when saving and printing: a table drawn with 3D transforms comes out flat in a PNG (the SVG keeps it, in programs that draw 3D in SVG, as browsers do when they open it), and a printed table shows its header row on the first page only. WebKit also can't stack the preview's pages, so they run side by side.
 
@@ -31,8 +31,8 @@ The window is a WebKit web view on Linux and macOS and a Chromium one (WebView2)
 
 [SPEC.md §11.2](../SPEC.md#112-remote-resources) asks renderers to say what a file's stylesheet may fetch. In the viewer:
 
-- **Files in the opened file's folder and the folders below it**, through `@import` and `url()`. Relative URLs resolve against the file, as §4.3 requires. Nothing else on disk is reachable: `../brand.css` fails and is reported.
-- **Nothing remote** until you allow it. Loading a remote stylesheet, font or image tells its server that the file was opened, and a stylesheet can send table values along (§11.3). When a file asks for remote resources, a bar under the toolbar lists each URL it asked for and what it is (a stylesheet, a font, an image). **Allow** reloads the window with remote loads allowed until it opens another file; **Always allow for this file** remembers the choice; **Don't allow** keeps them blocked and hides the bar. While remote content is allowed, a **Remote** button in the toolbar says so, and blocks it again.
+- **Files in the opened file's folder and the folders below it**, through `@import` and `url()`. Relative URLs resolve against the file, as §4.3 requires. Nothing else on disk is reachable: `../brand.css` fails and is reported. That holds for each tab on its own: a file can't reach the folder of a file open in another tab, because a tab's URLs carry a random id that only that tab's page knows.
+- **Nothing remote** until you allow it. Loading a remote stylesheet, font or image tells its server that the file was opened, and a stylesheet can send table values along (§11.3). When a file asks for remote resources, a bar under the toolbar lists each URL it asked for and what it is (a stylesheet, a font, an image). **Allow** reloads the tab with remote loads allowed until it opens another file; **Always allow for this file** remembers the choice; **Don't allow** keeps them blocked and hides the bar. While remote content is allowed, a **Remote** button in the toolbar says so, and blocks it again.
 
 ## Run it
 
@@ -61,10 +61,11 @@ An AppImage registers nothing by itself. The home offers to set it up: that adds
 ## How it fits together
 
 - `src-tauri/tauri.conf.json` lists `ui/` and the package's `src/cssv-table.js` and `src/core.js` as the app's files. In this repository, `package.json` takes the package from the folder above (`file:..`), so the viewer always ships the repository's renderer.
-- `src-tauri/src/main.rs` creates the windows and serves each window's file over a `cssv:` protocol whose URLs mirror file paths (`cssv://localhost/home/ana/budget.cssv`; `http://cssv.localhost/C:/…` on Windows). It only serves the window's own folder, and it watches the file to tell the window when it changes. A home window may also read the folders of its recent files, for their previews. It saves what the page makes through a save dialog it opens itself, so the page can only write where you chose. `linux.rs` sets up the AppImage and the print dialog: the PDF's name, and the preview's paper, orientation and margins, since WebKitGTK takes those from GTK rather than from `@page` (and prints a landscape page blank, so landscape is a portrait page wider than it is tall).
-- `ui/viewer.js` sets `src` on a `<cssv-table>` to that URL, blocks remote loads with a Content Security Policy until they are allowed, lists the `cssv-error` events, and calls `update()` with the new text when the file changes. `find.js`, `source.js` (with `highlight.js`, a copy of the website's CSSV colors), `export.js` and `print.js` (the print preview, adapted from the web editor's) are the toolbar's tools, `menu.js` its menus (adapted from the web editor's), and `prefs.js` what it remembers in `localStorage`. `boot.js` runs before the page is first drawn, so a window that opens a file doesn't show the home while it loads, and has the chosen theme's colors from the start.
+- `src-tauri/src/main.rs` creates the window and serves each tab's file over a `cssv:` protocol whose URLs are the tab's id followed by the file's path (`cssv://localhost/<tab>/home/ana/budget.cssv`; `http://cssv.localhost/<tab>/C:/…` on Windows). It only serves a tab its own file's folder, and it watches the file to tell the tab when it changes. A home tab may also read the folders of its recent files, for their previews. Files the viewer is asked to open from outside wait in a queue until the window's page takes them. It saves what the page makes through a save dialog it opens itself, so the page can only write where you chose. `linux.rs` sets up the AppImage and the print dialog: the PDF's name, and the preview's paper, orientation and margins, since WebKitGTK takes those from GTK rather than from `@page` (and prints a landscape page blank, so landscape is a portrait page wider than it is tall).
+- `ui/index.html` and `tabs.js` are the window: the strip of tabs, each a frame showing `viewer.html` with one file or the home. A tab's page loads the first time the tab is shown, so files opened together don't all render at once. The frames reach the Rust side through the window's Tauri API, naming their tab.
+- `ui/viewer.js` sets `src` on a `<cssv-table>` to that URL, blocks remote loads with a Content Security Policy until they are allowed, lists the `cssv-error` events, and calls `update()` with the new text when the file changes. `find.js`, `source.js` (with `highlight.js`, a copy of the website's CSSV colors), `export.js` and `print.js` (the print preview, adapted from the web editor's) are the toolbar's tools, `menu.js` its menus (adapted from the web editor's), and `prefs.js` what it remembers in `localStorage`. `boot.js` runs before a page is first drawn, so a tab that opens a file doesn't show the home while it loads, and the window and its tabs have the chosen theme's colors from the start.
 
-Changing an imported stylesheet doesn't update the window by itself; reload it.
+Changing an imported stylesheet doesn't update the tab by itself; reload it.
 
 ## Moving to its own repository
 
