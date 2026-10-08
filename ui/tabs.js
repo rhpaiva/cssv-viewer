@@ -15,7 +15,7 @@ const win = webviewWindow.getCurrentWebviewWindow();
 const $ = (id) => document.getElementById(id);
 const mac = /Mac/.test(navigator.platform);
 
-/** In the strip's order: { id, path (null for the home), loaded, el, name, close, frame }. */
+/** In the strip's order: { id, path (null for the home), title, loaded, el, name, close, frame }. */
 const tabs = [];
 let current = null;
 
@@ -26,8 +26,10 @@ const pageOf = (path) => (path === null ? 'viewer.html' : `viewer.html?${new URL
 // system's random source, so another tab's file can't guess it.
 const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
 
+// A tab is named after its file's title (4.6), once its page has read it,
+// or else the file's name.
 function label(tab) {
-  const name = tab.path === null ? 'Home' : nameOf(tab.path);
+  const name = tab.path === null ? 'Home' : tab.title || nameOf(tab.path);
   tab.name.textContent = name;
   tab.el.title = tab.path ?? 'Home';
   tab.frame.title = name;
@@ -93,6 +95,7 @@ function select(tab, { focus = 'page' } = {}) {
 
 function navigate(tab, path) {
   tab.path = path;
+  tab.title = null; // until the page reads the new file's
   tab.loaded = true;
   tab.frame.src = pageOf(path);
   label(tab);
@@ -179,6 +182,14 @@ function home() {
   select(tabs.find((t) => t.path === null) ?? create(null, tabs.length));
 }
 
+/** A tab's page read its file's title (4.6), or found none. */
+function titled(id, title) {
+  const tab = tabs.find((t) => t.id === id);
+  if (!tab || tab.title === title) return;
+  tab.title = title;
+  label(tab);
+}
+
 /** The last closed tab's file, back in its place, unless it's open again. */
 function reopen() {
   const last = closed.pop();
@@ -222,7 +233,7 @@ function key(event) {
 }
 
 // What a tab's page asks of the window (viewer.js).
-window.shell = { open, choose, key };
+window.shell = { open, choose, key, titled };
 
 addEventListener('keydown', (event) => {
   if (key(event)) event.preventDefault();

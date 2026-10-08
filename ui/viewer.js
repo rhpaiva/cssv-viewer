@@ -10,7 +10,7 @@
 // serves the file and its folder to this tab over the cssv: protocol and says
 // when the file changes.
 import './cssv-table.js';
-import { parse, rewriteCssUrls, splitFile } from './core.js';
+import { metadata, parse, rewriteCssUrls, splitFile } from './core.js';
 import { blockRows, encode, pngOf, save, selectedBlock, svgOf, tableRows, tsv } from './export.js';
 import { createFind } from './find.js';
 import { menuButton } from './menu.js';
@@ -274,16 +274,6 @@ function preview(text, url) {
   return style === null ? rows : `---\n${rewriteCssUrls(style, url)}---\n${rows}`;
 }
 
-// The style block's opening comment, when it comes before the first rule.
-function summary(text) {
-  const { style } = splitFile(text);
-  const open = style?.indexOf('/*') ?? -1;
-  const brace = style?.indexOf('{') ?? -1;
-  if (open < 0 || (brace >= 0 && brace < open)) return '';
-  const close = style.indexOf('*/', open + 2);
-  return close < 0 ? '' : style.slice(open + 2, close).replace(/\s+/g, ' ').trim();
-}
-
 async function fillCard(card, path) {
   const table = card.querySelector('cssv-table');
   const stats = card.querySelector('.card-stats');
@@ -291,7 +281,14 @@ async function fillCard(card, path) {
     const url = await core.invoke('preview_file', { tab, path });
     const text = await (await fetch(url, { cache: 'no-store' })).text();
     const model = parse(text);
-    card.querySelector('.card-desc').textContent = summary(text);
+    // The file's own title and description (4.6), as plain text. With a
+    // title, the line under it names the file, as in the web editor.
+    const { title, description } = metadata(text);
+    if (title) {
+      card.querySelector('.card-name').textContent = title;
+      card.querySelector('.card-path').textContent = path;
+    }
+    card.querySelector('.card-desc').textContent = description ?? '';
     stats.textContent = `${count(model.rows.length, 'row')} · ${count(model.columns.length, 'column')}`;
     await table.update(preview(text, url));
     // A preview holds still: ten animated tables would keep the page busy.
@@ -413,6 +410,14 @@ async function readText() {
     state.model = null;
   }
   source.render(state.text);
+  // The tab and the window are named after the file's title (4.6).
+  let title = null;
+  try {
+    title = metadata(state.text).title || null;
+  } catch {
+    // no style block to read it from; the renderer reports why
+  }
+  shell.titled(tab, title);
   return true;
 }
 

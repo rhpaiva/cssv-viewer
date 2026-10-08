@@ -2,8 +2,8 @@
 
 A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shell around `<cssv-table>`: the window is a web view, and the table in it is rendered by `src/cssv-table.js` from the [`@rhpaiva/cssv`](https://www.npmjs.com/package/@rhpaiva/cssv) package, the same renderer the website uses, loaded unchanged.
 
-- One window, with a tab for each file. A file opened from the file manager or the command line while the viewer runs opens in a tab of the running viewer. From the viewer (**Open…**, a recent file, a drop), a file opens in the current tab when that's the home, and otherwise in a new tab after it. A file that's open already shows its tab.
-- Started without a file, the viewer opens its home: open a file, or pick a recent one from its card, which shows the table's first rows rendered from its own styles, held still, with the style block's opening comment and the table's size. **+** shows the home in a tab.
+- One window, with a tab for each file, named after the file's title (§4.6) or, without one, the file's name. A file opened from the file manager or the command line while the viewer runs opens in a tab of the running viewer. From the viewer (**Open…**, a recent file, a drop), a file opens in the current tab when that's the home, and otherwise in a new tab after it. A file that's open already shows its tab.
+- Started without a file, the viewer opens its home: open a file, or pick a recent one from its card, which shows the table's first rows rendered from its own styles, held still, with the file's title and description (§4.6) and the table's size. **+** shows the home in a tab.
 - Saving the file updates its tab in place, in the background too: unchanged rows and the scroll position stay.
 - Drop files on the window to open them in tabs.
 - Problems the renderer reports (a bad `--cssv-format`, an import that failed, a malformed file) are listed under the toolbar, with the section of the spec they come from and, where the file says it, a link to the line.
@@ -71,6 +71,6 @@ Changing an imported stylesheet doesn't update the tab by itself; reload it.
 
 Everything the viewer needs is in this folder. To make it a repository of its own:
 
-1. Take the renderer from npm: in `package.json`, change `"@rhpaiva/cssv": "file:.."` to the published version, such as `"^0.3.0"`, and run `npm install`.
+1. Take the renderer from npm: in `package.json`, change `"@rhpaiva/cssv": "file:.."` to the published version, such as `"^0.4.0"`, and run `npm install`.
 2. Change the links to `../SPEC.md` in this README to the spec's public URL.
 3. [`.github/workflows/build.yml`](.github/workflows/build.yml) builds the AppImage, the Linux packages and the macOS and Windows installers, and attaches them to a release for each `v*` tag. GitHub only runs workflows from the repository's root, so it starts working once this folder is one.
