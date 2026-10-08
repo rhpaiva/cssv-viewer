@@ -6,8 +6,14 @@
 //   npm run appimage -- --binary <path>    packs an already built viewer
 //
 // It needs a Debian or Ubuntu system with apt (packages are only downloaded,
-// never installed, so no root), readelf and objdump (binutils), and the
-// network. appimagetool is downloaded when it isn't on the PATH.
+// never installed, so no root) and Ubuntu's archive key (the ubuntu-keyring
+// package), readelf and objdump (binutils), and the network. appimagetool
+// is downloaded when it isn't on the PATH.
+//
+// Everything downloaded is checked: apt checks the packages against the
+// signature of Ubuntu's archive, and appimagetool and the AppImage runtime
+// (the program at the start of the AppImage, which runs first when it
+// starts) are pinned releases with a SHA-256.
 //
 // The steps: download 22.04's packages for the libraries the viewer needs,
 // with everything they depend on; copy the viewer and every library it
@@ -17,6 +23,7 @@
 // loaders, print backends, settings schemas), AppRun and the icon.
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,9 +41,18 @@ const PACKAGES = [
 ];
 // What the AppImage excludelist leaves to the system, plus libGLESv2, which
 // has to match the system's graphics driver like the rest of GL.
-const EXCLUDELIST = 'https://raw.githubusercontent.com/AppImageCommunity/pkg2appimage/master/excludelist';
+// A commit's list, so the same build bundles the same libraries.
+const EXCLUDELIST = 'https://raw.githubusercontent.com/AppImageCommunity/pkg2appimage/19e30b276ffedf4d3b4b56bc6320f463625a74f8/excludelist';
 const ALSO_EXCLUDED = ['libGLESv2.so.2'];
-const APPIMAGETOOL = 'https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage';
+const APPIMAGETOOL = {
+  url: 'https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage',
+  sha256: 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0',
+};
+const RUNTIME = {
+  url: 'https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64',
+  sha256: '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d',
+};
+const KEYRING = '/usr/share/keyrings/ubuntu-archive-keyring.gpg';
 // 22.04's glibc: a viewer that needs a newer one won't start there.
 const GLIBC = [2, 35];
 
@@ -46,6 +62,25 @@ const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i < 0 ? null : process.argv[i + 1];
 };
+const sha256 = (data) => createHash('sha256').update(data).digest('hex');
+
+// A pinned download at `file`, downloaded again unless it has the SHA-256.
+async function pinned(file, { url, sha256: want }) {
+  if (fs.existsSync(file) && sha256(fs.readFileSync(file)) === want) return file;
+  say(`downloading ${path.basename(url)}`);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const body = Buffer.from(await res.arrayBuffer());
+  const got = sha256(body);
+  if (got !== want) throw new Error(`${url} has SHA-256 ${got}, not the pinned ${want}`);
+  fs.writeFileSync(file, body, { mode: 0o755 });
+  return file;
+}
+
+if (!fs.existsSync(KEYRING)) {
+  console.error(`appimage: ${KEYRING} is missing; install the ubuntu-keyring package, which apt needs to check Ubuntu's packages`);
+  process.exit(1);
+}
 
 // --- The viewer ---------------------------------------------------------------
 
@@ -78,7 +113,7 @@ for (const dir of ['etc/apt/apt.conf.d', 'etc/apt/preferences.d', 'etc/apt/sourc
 fs.mkdirSync(debs, { recursive: true });
 fs.writeFileSync(path.join(apt, 'var/lib/dpkg/status'), '');
 fs.writeFileSync(path.join(apt, 'etc/apt/sources.list'), ['jammy', 'jammy-updates', 'jammy-security']
-  .map((suite) => `deb [trusted=yes] http://${suite.endsWith('security') ? 'security' : 'archive'}.ubuntu.com/ubuntu ${suite} main universe\n`).join(''));
+  .map((suite) => `deb [signed-by=${KEYRING}] http://${suite.endsWith('security') ? 'security' : 'archive'}.ubuntu.com/ubuntu ${suite} main universe\n`).join(''));
 fs.writeFileSync(path.join(apt, 'apt.conf'), `Dir "${apt}/";
 Dir::State "${apt}/var/lib/apt";
 Dir::State::status "${apt}/var/lib/dpkg/status";
@@ -86,8 +121,6 @@ Dir::Cache "${apt}/var/cache/apt";
 Dir::Cache::archives "${debs}/";
 Dir::Etc "${apt}/etc/apt";
 APT::Architecture "amd64";
-APT::Get::AllowUnauthenticated "true";
-Acquire::AllowInsecureRepositories "true";
 Debug::NoLocking "true";
 `);
 const aptEnv = { ...process.env, APT_CONFIG: path.join(apt, 'apt.conf') };
@@ -124,7 +157,9 @@ for (const module of MODULES) copy(lib(module), into(module));
 
 // Every library those load, and the libraries those load, from the packages.
 const excluded = new Set(ALSO_EXCLUDED);
-for (const line of (await (await fetch(EXCLUDELIST)).text()).split('\n')) {
+const excludelist = await fetch(EXCLUDELIST);
+if (!excludelist.ok) throw new Error(`${EXCLUDELIST}: HTTP ${excludelist.status}`);
+for (const line of (await excludelist.text()).split('\n')) {
   const name = line.replace(/#.*/, '').trim();
   if (name) excluded.add(name);
 }
@@ -190,16 +225,14 @@ let tool = 'appimagetool';
 try {
   run('which', [tool]);
 } catch {
-  tool = path.join(work, 'appimagetool');
-  if (!fs.existsSync(tool)) {
-    say('downloading appimagetool');
-    fs.writeFileSync(tool, Buffer.from(await (await fetch(APPIMAGETOOL)).arrayBuffer()), { mode: 0o755 });
-  }
+  tool = await pinned(path.join(work, 'appimagetool'), APPIMAGETOOL);
 }
+// Given to appimagetool, which would otherwise download the latest runtime unchecked.
+const runtime = await pinned(path.join(work, 'runtime-x86_64'), RUNTIME);
 // Written next to the old one and renamed over it, which works while the old
 // one is running.
 const next = `${out}.next`;
-run(tool, ['--no-appstream', appdir, next], {
+run(tool, ['--no-appstream', '--runtime-file', runtime, appdir, next], {
   env: { ...process.env, ARCH: 'x86_64', APPIMAGE_EXTRACT_AND_RUN: '1' },
   stdio: ['ignore', 'ignore', 'inherit'],
 });
