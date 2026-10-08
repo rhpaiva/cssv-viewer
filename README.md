@@ -2,9 +2,10 @@
 
 A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shell around `<cssv-table>`: the window is a web view, and the table in it is rendered by `src/cssv-table.js` from the [`@rhpaiva/cssv`](https://www.npmjs.com/package/@rhpaiva/cssv) package, the same renderer the website uses, loaded unchanged.
 
-- One window per file. Opening a file from the file manager or the command line while the viewer runs opens it in the running viewer. Started without a file, the viewer opens the files that were open when it last quit.
+- One window per file. Opening a file from the file manager or the command line while the viewer runs opens it in the running viewer.
+- Started without a file, the viewer opens its home: open a file, or pick a recent one from its card, which shows the table's first rows rendered from its own styles, held still, with the style block's opening comment and the table's size.
 - Saving the file updates the window in place: unchanged rows and the scroll position stay.
-- Drop a file on a window to open it there. An empty window lists the files opened recently.
+- Drop a file on a window to open it there.
 - Problems the renderer reports (a bad `--cssv-format`, an import that failed, a malformed file) are listed under the toolbar, with the section of the spec they come from and, where the file says it, a link to the line.
 - Windows open at the size and place they had (Wayland doesn't let apps place windows, so there only the size).
 
@@ -13,7 +14,7 @@ A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shel
 | | |
 |---|---|
 | **Open…** and **▾** | Opens a file (<kbd>Ctrl</kbd> <kbd>O</kbd>). The arrow lists recent files and, in the Linux AppImage, sets the viewer up to open `.cssv` files. |
-| Find | Searches the values as the file has them, column names included, and marks the cells that hold them (<kbd>Ctrl</kbd> <kbd>F</kbd>; <kbd>Enter</kbd> and <kbd>Shift</kbd> <kbd>Enter</kbd> move between matches). `1234.5` finds the cell that shows `1,234.50`. |
+| Find | Searches the values as the file has them, column names included, and marks the cells that hold them (<kbd>Ctrl</kbd> <kbd>F</kbd>; <kbd>Enter</kbd> and <kbd>Shift</kbd> <kbd>Enter</kbd> move between matches; the button or <kbd>Esc</kbd> closes it). `1234.5` finds the cell that shows `1,234.50`. |
 | Plain view | The data without its style block, in the renderer's default styles: what the file holds when its styles hide or rearrange it. |
 | Source | The file's text beside the table, with line numbers (<kbd>Ctrl</kbd> <kbd>U</kbd>). Drag the divider to resize it. |
 | Light or dark | Follows the system, or makes the window light or dark. The table's `light-dark()` values and `prefers-color-scheme` queries follow it, in every window. |
@@ -55,12 +56,12 @@ The installers register the viewer for `.cssv` files: the `.deb` adds the `text/
 - GTK's print backends come from inside the AppImage, so the print dialog lists the printers and Print to File.
 - WebKit's helper processes are found through a relative path that the build patches into `libwebkit2gtk`, so the viewer starts from inside the AppImage.
 
-An AppImage registers nothing by itself. An empty window offers to set it up: that adds a menu entry that runs this AppImage, the `text/x-cssv` media type for `*.cssv` files and the icons, all in your home folder, and makes the viewer the app for `.cssv` files. The menu entry's name matches the window's class, `cssv-viewer`, which is how the dock finds the icon. If the AppImage moves, the next start from its new place updates the entry; **▾ → Stop opening .cssv files with CSSV Viewer** removes it all.
+An AppImage registers nothing by itself. The home offers to set it up: that adds a menu entry that runs this AppImage, the `text/x-cssv` media type for `*.cssv` files and the icons, all in your home folder, and makes the viewer the app for `.cssv` files. The menu entry's name matches the window's class, `cssv-viewer`, which is how the dock finds the icon. If the AppImage moves, the next start from its new place updates the entry; **▾ → Stop opening .cssv files with CSSV Viewer** removes it all.
 
 ## How it fits together
 
 - `src-tauri/tauri.conf.json` lists `ui/` and the package's `src/cssv-table.js` and `src/core.js` as the app's files. In this repository, `package.json` takes the package from the folder above (`file:..`), so the viewer always ships the repository's renderer.
-- `src-tauri/src/main.rs` creates the windows and serves each window's file over a `cssv:` protocol whose URLs mirror file paths (`cssv://localhost/home/ana/budget.cssv`; `http://cssv.localhost/C:/…` on Windows). It only serves the window's own folder, and it watches the file to tell the window when it changes. It also saves what the page makes, through a save dialog it opens itself, so the page can only write where you chose. `session.rs` keeps the open files for the next start, and `linux.rs` sets up the AppImage and names printed PDFs.
+- `src-tauri/src/main.rs` creates the windows and serves each window's file over a `cssv:` protocol whose URLs mirror file paths (`cssv://localhost/home/ana/budget.cssv`; `http://cssv.localhost/C:/…` on Windows). It only serves the window's own folder, and it watches the file to tell the window when it changes. A home window may also read the folders of its recent files, for their previews. It saves what the page makes through a save dialog it opens itself, so the page can only write where you chose. `linux.rs` sets up the AppImage and names printed PDFs.
 - `ui/viewer.js` sets `src` on a `<cssv-table>` to that URL, blocks remote loads with a Content Security Policy until they are allowed, lists the `cssv-error` events, and calls `update()` with the new text when the file changes. `find.js`, `source.js` (with `highlight.js`, a copy of the website's CSSV colors) and `export.js` are the toolbar's tools, `menu.js` its menus (adapted from the web editor's), and `prefs.js` what it remembers in `localStorage`.
 
 Changing an imported stylesheet doesn't update the window by itself; reload it.

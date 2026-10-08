@@ -7,7 +7,7 @@
 // side (src-tauri) serves the file and its folder over the cssv: protocol and
 // says when the file changes.
 import './cssv-table.js';
-import { parse, splitFile } from './core.js';
+import { parse, rewriteCssUrls, splitFile } from './core.js';
 import { blockRows, encode, pngOf, save, selectedBlock, svgOf, tableRows, tsv } from './export.js';
 import { createFind } from './find.js';
 import { menuButton } from './menu.js';
@@ -177,6 +177,7 @@ function showBlocked() {
 }
 
 document.addEventListener('securitypolicyviolation', (event) => {
+  if (!file) return; // the home's previews stay without remote content
   let url;
   try {
     url = new URL(event.blockedURI);
@@ -245,25 +246,105 @@ function recentItems() {
   ];
 }
 
-// The empty window lists recent files to open again.
-function showRecent() {
-  const list = prefs.recent().slice(0, 6);
-  $('recent').hidden = file !== null || list.length === 0;
-  $('recent-list').replaceChildren(...list.map((path) => {
-    const li = document.createElement('li');
-    const button = document.createElement('button');
-    button.type = 'button';
-    const { name, folder } = split(path);
-    const strong = document.createElement('strong');
-    strong.textContent = name;
-    const span = document.createElement('span');
-    span.textContent = folder;
-    button.append(strong, span);
-    button.title = path;
-    button.addEventListener('click', () => go(path));
-    li.append(button);
-    return li;
-  }));
+// The home lists recent files as cards, each with a preview: the file's
+// first rows, rendered from its own style block. The window may read a
+// recent file's folder for that (preview_file), and nothing remote.
+const PREVIEW_ROWS = 60;
+
+function h(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children.filter((c) => c !== null));
+  return node;
+}
+
+// The first `n` records of a data section; a line break inside quotes
+// doesn't end one.
+function firstRecords(data, n) {
+  let quoted = false;
+  let records = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === '"') quoted = !quoted;
+    else if (data[i] === '\n' && !quoted && ++records === n) return data.slice(0, i + 1);
+  }
+  return data;
+}
+
+// The header and the first rows. The preview has no src, so relative URLs
+// in the style block are made absolute against the file's URL (4.3).
+function preview(text, url) {
+  const { style, data } = splitFile(text);
+  const rows = firstRecords(data, PREVIEW_ROWS + 1);
+  return style === null ? rows : `---\n${rewriteCssUrls(style, url)}---\n${rows}`;
+}
+
+// The style block's opening comment, when it comes before the first rule.
+function summary(text) {
+  const { style } = splitFile(text);
+  const open = style?.indexOf('/*') ?? -1;
+  const brace = style?.indexOf('{') ?? -1;
+  if (open < 0 || (brace >= 0 && brace < open)) return '';
+  const close = style.indexOf('*/', open + 2);
+  return close < 0 ? '' : style.slice(open + 2, close).replace(/\s+/g, ' ').trim();
+}
+
+async function fillCard(card, path) {
+  const table = card.querySelector('cssv-table');
+  const stats = card.querySelector('.card-stats');
+  try {
+    const url = await core.invoke('preview_file', { path });
+    const text = await (await fetch(url, { cache: 'no-store' })).text();
+    const model = parse(text);
+    card.querySelector('.card-desc').textContent = summary(text);
+    stats.textContent = `${count(model.rows.length, 'row')} · ${count(model.columns.length, 'column')}`;
+    await table.update(preview(text, url));
+    // A preview holds still: ten animated tables would keep the page busy.
+    for (const animation of table.table?.getAnimations({ subtree: true }) ?? []) animation.pause();
+  } catch (error) {
+    card.classList.add('failed');
+    stats.textContent = String(error?.message ?? error);
+  }
+}
+
+function recentCard(path) {
+  const { name, folder } = split(path);
+  const table = document.createElement('cssv-table');
+  setLang(table, prefs.get('locale', ''));
+  const card = h('article', { className: 'card', role: 'listitem' },
+    h('a', { className: 'card-open', href: `?${new URLSearchParams({ file: path })}`, title: path },
+      h('div', { className: 'thumb', inert: true }, table),
+      h('div', { className: 'card-body' },
+        h('strong', { className: 'card-name', textContent: name }),
+        h('span', { className: 'card-path', textContent: folder }),
+        h('p', { className: 'card-desc' }),
+        h('span', { className: 'card-stats', textContent: 'Loading…' }))),
+    h('button', {
+      type: 'button',
+      className: 'card-remove',
+      title: 'Remove from recent files',
+      ariaLabel: `Remove ${name} from recent files`,
+      textContent: '×',
+      onclick: () => {
+        prefs.removeRecent(path);
+        showRecent();
+      },
+    }));
+  return card;
+}
+
+// The previews render one after another, so the page builds one table at a
+// time; a newer list stops an older one.
+let listing = 0;
+async function showRecent() {
+  const list = file === null ? prefs.recent() : [];
+  $('recent').hidden = list.length === 0;
+  $('home').classList.toggle('with-recent', list.length > 0);
+  const cards = list.map(recentCard);
+  $('recent-cards').replaceChildren(...cards);
+  const run = ++listing;
+  for (const [i, card] of cards.entries()) {
+    if (run !== listing) return;
+    await fillCard(card, list[i]);
+  }
 }
 
 // Linux, run as an AppImage: whether this copy opens .cssv files from the
@@ -357,8 +438,7 @@ async function open(path) {
 
   const table = document.createElement('cssv-table');
   state.table = table;
-  const locale = prefs.get('locale', '');
-  if (locale) table.setAttribute('lang', locale);
+  setLang(table, prefs.get('locale', ''));
   table.addEventListener('cssv-loadstart', () => {
     problems.length = 0;
     showProblems();
@@ -394,7 +474,7 @@ const source = createSource({
   onToggle: (open) => $('source').setAttribute('aria-pressed', String(open)),
 });
 
-$('find-open').addEventListener('click', () => find.open());
+$('find-open').addEventListener('click', () => find.toggle());
 
 $('plain').addEventListener('click', () => {
   state.plain = !state.plain;
@@ -445,15 +525,18 @@ const languageName = (tag) => {
     return tag;
   }
 };
+function setLang(table, locale) {
+  if (locale) table.setAttribute('lang', locale);
+  else table.removeAttribute('lang');
+}
+
 function applyLocale(locale) {
   const tag = locale || SYSTEM;
   $('numbers').textContent = tag;
   const label = `Numbers in ${locale ? languageName(tag) : `the system's language (${tag})`}`;
   $('numbers').title = label;
   $('numbers').setAttribute('aria-label', label);
-  if (!state.table) return;
-  if (locale) state.table.setAttribute('lang', locale);
-  else state.table.removeAttribute('lang');
+  for (const table of document.querySelectorAll('cssv-table')) setLang(table, locale);
 }
 applyLocale(prefs.get('locale', ''));
 prefs.watch('locale', (locale) => applyLocale(locale ?? ''));

@@ -87,16 +87,23 @@ export function createFind({ stage, marks, host, model }) {
     else draw();
   }
 
+  // The toolbar's Find button shows whether the box is open.
+  const button = $('find-open');
+  function show(open) {
+    box.hidden = !open;
+    button.setAttribute('aria-pressed', String(open));
+  }
+
   function open() {
     if (!model()) return;
-    box.hidden = false;
+    show(true);
     input.focus();
     input.select();
     if (input.value) run({ jump: false });
   }
 
   function close() {
-    box.hidden = true;
+    show(false);
     draw();
   }
 
@@ -116,6 +123,7 @@ export function createFind({ stage, marks, host, model }) {
   return {
     open,
     close,
+    toggle: () => (box.hidden ? open() : close()),
     /** After the table rendered again: the same search, on the new values. */
     refresh: () => { if (!box.hidden) run({ jump: false }); },
     next: (dir) => (box.hidden ? open() : go(index + dir)),

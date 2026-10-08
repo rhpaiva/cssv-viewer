@@ -280,26 +280,91 @@ cssv-table { font: 15px/1.45 var(--sans); color: var(--text); }
 .t-quoted  { color: #86efac; }
 .t-text    { color: #e3dfd3; }
 
-/* The empty window: open a file, a recent one, or set the viewer up. */
-.empty { min-height: 100%; display: grid; place-content: center; justify-items: center; text-align: center; gap: 4px; }
-.empty svg { width: 56px; height: 56px; margin-bottom: 12px; }
-.empty .tile { fill: var(--text); }
-.empty .braces { stroke: var(--bg); }
-.empty h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
-.empty mark { background: linear-gradient(transparent 58%, var(--mark) 58% 94%, transparent 94%); color: inherit; font-family: var(--mono); font-size: 0.9em; }
-.empty p { margin: 0 0 14px; color: var(--muted); }
-.empty .hint { margin-top: 18px; font-size: 12px; }
-.empty h2 { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
-.recent, .setup { width: min(440px, 100%); margin-top: 22px; text-align: start; }
-.recent ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.recent button { display: grid; width: 100%; padding: 6px 10px; border-color: transparent; background: transparent; text-align: start; }
-.recent button:hover { background: var(--hover); border-color: transparent; }
-.recent strong { font-weight: 600; }
-.recent span { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.setup { padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
-.setup h2 { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 14px; }
-.setup p { margin: 0 0 12px; font-size: 13px; }
+/* The home: open a file, set the viewer up, or pick a recent file from its
+   card. Without recent files it sits in the middle of the window. */
+.home { min-height: 100%; display: grid; align-content: center; justify-items: center; gap: 28px; }
+.home.with-recent { align-content: start; padding-top: 12px; }
+.hero { display: grid; justify-items: center; gap: 4px; text-align: center; }
+.hero svg { width: 56px; height: 56px; margin-bottom: 12px; }
+.hero .tile { fill: var(--text); }
+.hero .braces { stroke: var(--bg); }
+.hero h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+.hero mark { background: linear-gradient(transparent 58%, var(--mark) 58% 94%, transparent 94%); color: inherit; font-family: var(--mono); font-size: 0.9em; }
+.hero p { margin: 0 0 14px; color: var(--muted); }
+.hero .hint { margin: 18px 0 0; font-size: 12px; }
+.setup { width: min(440px, 100%); padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.setup h2 { margin: 0 0 6px; font-size: 14px; }
+.setup p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
 .setup-actions { display: flex; gap: 8px; }
+.recent { justify-self: stretch; width: min(1120px, 100%); margin-inline: auto; }
+.recent h2 { margin: 0 0 14px; color: var(--muted); font: 600 12px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; }
+
+/* A recent file's card: its first rows at half size, then its name, folder,
+   the style block's opening comment and its size. */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 18px; }
+.card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+  content-visibility: auto; /* cards out of view aren't drawn */
+  contain-intrinsic-size: auto 280px;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.card:hover, .card:focus-within { border-color: var(--muted); transform: translateY(-2px); }
+.card-open { display: flex; flex-direction: column; height: 100%; color: inherit; text-decoration: none; outline: none; }
+.card-open:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); border-radius: 12px; }
+.thumb {
+  position: relative;
+  height: 150px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--bg-alt);
+  background-image: radial-gradient(color-mix(in srgb, var(--muted) 30%, transparent) 1px, transparent 1.5px);
+  background-size: 16px 16px;
+}
+/* zoom, not a scale() transform: WebKit's page process runs out of memory
+   drawing a filtered table (the lava lamp's blur) in a scaled layer. Its
+   own offsets are halved too. */
+.thumb cssv-table {
+  position: absolute;
+  inset: 20px 0 auto 20px;
+  display: block;
+  zoom: 0.5;
+}
+.card.failed .thumb { opacity: 0.5; }
+.card-body { display: grid; gap: 2px; padding: 12px 14px 14px; min-width: 0; }
+.card-name { font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-path, .card-stats { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-path { font-family: var(--mono); font-size: 11.5px; }
+.card-desc {
+  display: -webkit-box;
+  margin: 4px 0 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.card-desc:empty { display: none; }
+.card.failed .card-stats { color: var(--bad); }
+.card-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.card:hover .card-remove, .card:focus-within .card-remove { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .card, .card-remove { transition: none; } .card:hover, .card:focus-within { transform: none; } }
 kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; background: var(--surface); }
 
 .drop {

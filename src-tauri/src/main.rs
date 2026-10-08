@@ -10,12 +10,11 @@
 
 #[cfg(target_os = "linux")]
 mod linux;
-mod session;
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -31,39 +30,28 @@ use tauri_plugin_window_state::StateFlags;
 /// Characters kept as they are in a path segment of a cssv: URL.
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'.').remove(b'_').remove(b'~');
 
-/// A window's file: the file, the folder the protocol serves, when it was
-/// opened (the session keeps that order), and the watcher that tells the
-/// window when the file changes. Dropping it stops the watcher.
+/// A window's file: the file, the folder the protocol serves, and the
+/// watcher that tells the window when the file changes. Dropping it stops
+/// the watcher.
 struct Opened {
     path: PathBuf,
     root: PathBuf,
-    order: usize,
     _watcher: Debouncer<RecommendedWatcher>,
 }
 
 #[derive(Default)]
 struct Viewer {
     opened: Mutex<HashMap<String, Opened>>,
+    /// The folders of the recent files a home window shows previews of.
+    previews: Mutex<HashMap<String, HashSet<PathBuf>>>,
     /// Windows sent a file that their page hasn't opened yet.
     pending: Mutex<HashSet<String>>,
     windows: AtomicUsize,
-    opens: AtomicUsize,
-    /// Set while the viewer quits, so closing its windows doesn't shrink the
-    /// session that was just saved.
-    quitting: AtomicBool,
 }
 
 /// The file a window shows, if any.
 fn file_of(app: &AppHandle, label: &str) -> Option<PathBuf> {
     app.state::<Viewer>().opened.lock().unwrap().get(label).map(|o| o.path.clone())
-}
-
-/// The files the windows show, in the order they were opened.
-fn open_files(app: &AppHandle) -> Vec<PathBuf> {
-    let viewer = app.state::<Viewer>();
-    let mut files: Vec<_> = viewer.opened.lock().unwrap().values().map(|o| (o.order, o.path.clone())).collect();
-    files.sort();
-    files.into_iter().map(|(_, path)| path).collect()
 }
 
 /// The cssv: URL of a file. Webviews on Windows reach custom protocols
@@ -125,20 +113,23 @@ fn respond(status: StatusCode, content_type: &str, body: Vec<u8>) -> Response<Co
 }
 
 /// Serves a file to the window that requested it, if the file lies under that
-/// window's root (11.2).
+/// window's root (11.2), or, in a home window, under the folder of a recent
+/// file it previews.
 fn serve(ctx: UriSchemeContext<'_, tauri::Wry>, request: Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
     let viewer = ctx.app_handle().state::<Viewer>();
-    let root = viewer.opened.lock().unwrap().get(ctx.webview_label()).map(|o| o.root.clone());
-    let Some(root) = root else {
+    let label = ctx.webview_label();
+    let mut roots: Vec<PathBuf> = viewer.opened.lock().unwrap().get(label).map(|o| o.root.clone()).into_iter().collect();
+    roots.extend(viewer.previews.lock().unwrap().get(label).into_iter().flatten().cloned());
+    if roots.is_empty() {
         return respond(StatusCode::FORBIDDEN, "text/plain", b"No file is open in this window.".to_vec());
-    };
+    }
     let Some(path) = url_path(request.uri().path()) else {
         return respond(StatusCode::BAD_REQUEST, "text/plain", b"Malformed path.".to_vec());
     };
     let Ok(path) = std::fs::canonicalize(&path) else {
         return respond(StatusCode::NOT_FOUND, "text/plain", b"Not found.".to_vec());
     };
-    if !path.starts_with(&root) {
+    if !roots.iter().any(|root| path.starts_with(root)) {
         return respond(StatusCode::FORBIDDEN, "text/plain", b"Outside the opened file's folder.".to_vec());
     }
     match std::fs::read(&path) {
@@ -161,6 +152,7 @@ fn open_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, path: Stri
     // Whatever the window showed before is gone, even if this file fails.
     viewer.pending.lock().unwrap().remove(window.label());
     viewer.opened.lock().unwrap().remove(window.label());
+    viewer.previews.lock().unwrap().remove(window.label());
     let _ = window.set_title("CSSV Viewer");
 
     let path = std::path::absolute(PathBuf::from(&path)).map_err(|e| e.to_string())?;
@@ -193,10 +185,8 @@ fn open_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, path: Stri
     .map_err(|e| e.to_string())?;
     watcher.watcher().watch(folder, RecursiveMode::NonRecursive).map_err(|e| e.to_string())?;
 
-    let order = viewer.opens.fetch_add(1, Ordering::Relaxed);
-    let opened = Opened { path: path.clone(), root, order, _watcher: watcher };
+    let opened = Opened { path: path.clone(), root, _watcher: watcher };
     viewer.opened.lock().unwrap().insert(window.label().to_string(), opened);
-    session::save(window.app_handle(), &open_files(window.app_handle()));
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let _ = window.set_title(&format!("{name} — CSSV Viewer"));
     Ok(file_url(&path))
@@ -226,12 +216,23 @@ async fn save_file(window: WebviewWindow, request: tauri::ipc::Request<'_>) -> R
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
-/// Quits the viewer, keeping every open window's file for the next start.
+/// Lets a home window read a recent file and its folder, for the file's
+/// preview, and returns the file's URL.
+#[tauri::command]
+fn preview_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, path: String) -> Result<String, String> {
+    let path = PathBuf::from(&path);
+    if !path.is_file() {
+        return Err("Not found.".into());
+    }
+    let folder = path.parent().ok_or("The file has no folder.")?;
+    let root = std::fs::canonicalize(folder).map_err(|e| e.to_string())?;
+    viewer.previews.lock().unwrap().entry(window.label().to_string()).or_default().insert(root);
+    Ok(file_url(&path))
+}
+
+/// Quits the viewer, closing every window.
 #[tauri::command]
 fn quit(app: AppHandle) {
-    if !app.state::<Viewer>().quitting.swap(true, Ordering::Relaxed) {
-        session::save(&app, &open_files(&app));
-    }
     app.exit(0);
 }
 
@@ -343,33 +344,21 @@ fn main() {
         )
         .manage(Viewer::default())
         .register_uri_scheme_protocol("cssv", serve)
-        .invoke_handler(tauri::generate_handler![open_file, save_file, quit, integration, set_integration])
+        .invoke_handler(tauri::generate_handler![open_file, preview_file, save_file, quit, integration, set_integration])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                let app = window.app_handle();
                 let viewer = window.state::<Viewer>();
                 viewer.pending.lock().unwrap().remove(window.label());
-                // The last window's file stays in the session: closing it
-                // quits the viewer, and the next start shows it again.
-                let others = app.webview_windows().keys().any(|label| label != window.label());
-                if others {
-                    viewer.opened.lock().unwrap().remove(window.label());
-                    if !viewer.quitting.load(Ordering::Relaxed) {
-                        session::save(app, &open_files(app));
-                    }
-                }
+                viewer.opened.lock().unwrap().remove(window.label());
+                viewer.previews.lock().unwrap().remove(window.label());
             }
         })
         .setup(|app| {
             #[cfg(target_os = "linux")]
             linux::refresh();
             let cwd = std::env::current_dir().unwrap_or_default();
-            let mut paths = paths_in(std::env::args().skip(1), &cwd);
-            // Started without files: show the ones that were open when the
-            // viewer last quit.
-            if paths.is_empty() {
-                paths = session::load(app.handle()).into_iter().filter(|p| p.is_file()).collect();
-            }
+            let paths = paths_in(std::env::args().skip(1), &cwd);
+            // Started without files: the home, with the recent ones.
             if paths.is_empty() {
                 show(app.handle(), None);
             }
@@ -380,27 +369,20 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building the CSSV Viewer")
-        .run(|app, event| {
-            // Quitting (Cmd+Q, the last window closing) saves the session
-            // once, before the windows close one by one.
-            if let tauri::RunEvent::ExitRequested { .. } = &event {
-                if !app.state::<Viewer>().quitting.swap(true, Ordering::Relaxed) {
-                    session::save(app, &open_files(app));
-                }
-            }
+        .run(|_app, _event| {
             // On macOS, Finder opens files through an event rather than the
             // command line, and clicking the Dock icon with every window
             // closed asks for a window.
             #[cfg(target_os = "macos")]
-            match event {
+            match _event {
                 tauri::RunEvent::Opened { urls } => {
                     for url in urls {
                         if let Ok(path) = url.to_file_path() {
-                            show(app, Some(path));
+                            show(_app, Some(path));
                         }
                     }
                 }
-                tauri::RunEvent::Reopen { has_visible_windows: false, .. } => show(app, None),
+                tauri::RunEvent::Reopen { has_visible_windows: false, .. } => show(_app, None),
                 _ => {}
             }
         });
