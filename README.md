@@ -14,7 +14,7 @@ A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shel
 | | |
 |---|---|
 | **Open…** and **▾** | Opens files (<kbd>Ctrl</kbd> <kbd>O</kbd>). The arrow lists recent files and, in the Linux AppImage, sets the viewer up to open `.cssv` files. |
-| Find | Searches the values as the file has them, column names included, and marks the cells that hold them (<kbd>Ctrl</kbd> <kbd>F</kbd>; <kbd>Enter</kbd> and <kbd>Shift</kbd> <kbd>Enter</kbd> move between matches; the button or <kbd>Esc</kbd> closes it). `1234.5` finds the cell that shows `1,234.50`. |
+| Find | Searches the values as the file has them, column names included, and marks the matched text in the cells that hold them (<kbd>Ctrl</kbd> <kbd>F</kbd>; <kbd>Enter</kbd> and <kbd>Shift</kbd> <kbd>Enter</kbd> move between matches; the button or <kbd>Esc</kbd> closes it). `1234.5` finds the cell that shows `1,234.50`, and marks all of its text. |
 | Plain view | The data without its style block, in the renderer's default styles: what the file holds when its styles hide or rearrange it. |
 | Source | The file's text beside the table, with line numbers (<kbd>Ctrl</kbd> <kbd>U</kbd>). Drag the divider to resize it. |
 | Light or dark | Follows the system, or makes the window light or dark. The table's `light-dark()` values and `prefers-color-scheme` queries follow it, in every tab. |

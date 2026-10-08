@@ -182,8 +182,9 @@ html.opening #home { display: none; }
 #stage > cssv-table { opacity: 0; transition: opacity 0.2s ease-out; }
 #stage > cssv-table.shown { opacity: 1; }
 .marks { position: absolute; inset: 0 auto auto 0; z-index: 1; pointer-events: none; }
-.mark { position: absolute; background: rgb(255 228 92 / 0.38); box-shadow: inset 0 0 0 1px rgb(201 165 0 / 0.7); }
-.mark.current { background: rgb(255 200 40 / 0.6); box-shadow: inset 0 0 0 2px #b08900; }
+/* Over the matched text (find.js), like a highlighter. */
+.mark { position: absolute; border-radius: 3px; background: rgb(255 228 92 / 0.45); box-shadow: inset 0 0 0 1px rgb(201 165 0 / 0.55); }
+.mark.current { background: rgb(255 190 30 / 0.6); box-shadow: inset 0 0 0 1.5px #b08900; }
 
 .find {
   position: absolute;

@@ -1,11 +1,30 @@
 // Find: searches the values as the file has them, column names included,
-// not their formatted display, and marks the cells that hold them. Adapted
-// from the web editor's find (site/editor/sheet.js); the viewer doesn't edit,
-// so there is no replace.
+// not their formatted display, and marks the matched text in the cells that
+// hold them. Adapted from the web editor's find (site/editor/sheet.js); the
+// viewer doesn't edit, so there is no replace.
 import { tableRows } from './export.js';
 
 const $ = (id) => document.getElementById(id);
 const MARKS = 2000;
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// The boxes of characters `from` to `to` of the text that `texts`, a cell's
+// text nodes in order, show together.
+function textBoxes(texts, from, to) {
+  const out = [];
+  let at = 0;
+  for (const node of texts) {
+    const end = at + node.data.length;
+    if (end > from && at < to) {
+      const range = document.createRange();
+      range.setStart(node, Math.max(from - at, 0));
+      range.setEnd(node, Math.min(to - at, node.data.length));
+      out.push(...[...range.getClientRects()].filter((r) => r.width && r.height));
+    }
+    at = end;
+  }
+  return out;
+}
 
 /**
  * `stage` scrolls the table; `marks` is a layer inside it. `host()` and
@@ -45,29 +64,52 @@ export function createFind({ stage, marks, host, model }) {
     count.classList.toggle('none', !!input.value && !matches.length);
   }
 
+  // What to mark in a matched cell: each place its text shows the query. A
+  // cell that shows its value otherwise (a formatted number, text its style
+  // block replaces), or a search for whole cells, marks all of its text, and
+  // a cell whose text has no box marks the cell. A cell the style block hides
+  // has no box at all: it counts, but gets no mark.
+  function boxesIn(td) {
+    const texts = [];
+    const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) texts.push(node);
+    const shown = texts.map((node) => node.data).join('');
+    const spans = [];
+    if (!whole.checked) {
+      const pattern = new RegExp(escape(input.value), matchCase.checked ? 'gu' : 'giu');
+      for (const m of shown.matchAll(pattern)) spans.push([m.index, m.index + m[0].length]);
+    }
+    if (!spans.length) spans.push([0, shown.length]);
+    const out = spans.flatMap(([from, to]) => textBoxes(texts, from, to));
+    if (out.length) return out;
+    const own = td.getBoundingClientRect();
+    return own.width || own.height ? [own] : [];
+  }
+
   // Marks sit in the stage's scrolled content, so they move with the table.
-  // A cell the style block hides has no box: it counts, but gets no mark.
   function draw() {
     if (box.hidden || !matches.length) {
       marks.replaceChildren();
       return;
     }
     const origin = stage.getBoundingClientRect();
-    const boxes = [];
+    const drawn = [];
     matches.slice(0, MARKS).forEach((m, i) => {
-      const r = cell(m)?.getBoundingClientRect();
-      if (!r || (!r.width && !r.height)) return;
-      const mark = document.createElement('div');
-      mark.className = i === index ? 'mark current' : 'mark';
-      Object.assign(mark.style, {
-        left: `${r.left - origin.left + stage.scrollLeft}px`,
-        top: `${r.top - origin.top + stage.scrollTop}px`,
-        width: `${r.width}px`,
-        height: `${r.height}px`,
-      });
-      boxes.push(mark);
+      const td = cell(m);
+      if (!td) return;
+      for (const r of boxesIn(td)) {
+        const mark = document.createElement('div');
+        mark.className = i === index ? 'mark current' : 'mark';
+        Object.assign(mark.style, {
+          left: `${r.left - origin.left + stage.scrollLeft - 1}px`,
+          top: `${r.top - origin.top + stage.scrollTop}px`,
+          width: `${r.width + 2}px`,
+          height: `${r.height}px`,
+        });
+        drawn.push(mark);
+      }
     });
-    marks.replaceChildren(...boxes);
+    marks.replaceChildren(...drawn);
   }
 
   function go(i) {
