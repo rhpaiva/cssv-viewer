@@ -177,9 +177,9 @@ function open(paths) {
   if (last) select(last);
 }
 
-/** The home: its tab if there is one, or a new tab at the end. */
+/** The home, in a new tab at the end, as a browser's new tab. */
 function home() {
-  select(tabs.find((t) => t.path === null) ?? create(null, tabs.length));
+  select(create(null, tabs.length));
 }
 
 /** A tab's page read its file's title (4.6), or found none. */
