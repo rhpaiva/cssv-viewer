@@ -14,7 +14,10 @@ use std::process::Command;
 
 use tauri::{Manager, WebviewWindow};
 
-use crate::Integration;
+use crate::{Integration, Paper, Print, Viewer};
+
+#[cfg(test)]
+mod tests;
 
 const ENTRY: &str = "cssv-viewer.desktop";
 const MIME: &str = "text/x-cssv";
@@ -62,6 +65,16 @@ pub fn status() -> Integration {
     let available = appimage().is_some();
     let installed = data_home().and_then(|d| installed_for(&d)).is_some();
     Integration { available, installed }
+}
+
+/// Sets the AppImage up to open .cssv files, or takes that away.
+pub fn set(on: bool) -> Result<Integration, String> {
+    if on {
+        install()?;
+    } else {
+        remove()?;
+    }
+    Ok(status())
 }
 
 /// The AppImage's path as the entry can hold it: in UTF-8, as the Desktop
@@ -130,9 +143,7 @@ fn write_entry(data: &Path, appimage: &Path) -> Result<(), String> {
 }
 
 fn write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
-    }
+    path.parent().map(std::fs::create_dir_all).transpose().map_err(|e| format!("Could not create the folder of {}: {e}", path.display()))?;
     std::fs::write(path, bytes).map_err(|e| format!("Could not write {}: {e}", path.display()))
 }
 
@@ -142,9 +153,16 @@ fn host(program: &str, args: &[&str]) {
     let mut command = Command::new(program);
     command.args(args);
     for var in [
-        "LD_LIBRARY_PATH", "GIO_MODULE_DIR", "GSETTINGS_SCHEMA_DIR", "GDK_PIXBUF_MODULEDIR",
-        "GDK_PIXBUF_MODULE_FILE", "GTK_PATH", "GTK_EXE_PREFIX", "GTK_IM_MODULE",
-        "GST_PLUGIN_SYSTEM_PATH_1_0", "GST_REGISTRY_FORK",
+        "LD_LIBRARY_PATH",
+        "GIO_MODULE_DIR",
+        "GSETTINGS_SCHEMA_DIR",
+        "GDK_PIXBUF_MODULEDIR",
+        "GDK_PIXBUF_MODULE_FILE",
+        "GTK_PATH",
+        "GTK_EXE_PREFIX",
+        "GTK_IM_MODULE",
+        "GST_PLUGIN_SYSTEM_PATH_1_0",
+        "GST_REGISTRY_FORK",
     ] {
         command.env_remove(var);
     }
@@ -230,81 +248,50 @@ pub fn refresh() {
     }
 }
 
-/// Sets up the print dialog: the PDF that "Print to File" writes is named
-/// after the printing tab's file, in its folder (budget.cssv prints to
-/// budget.pdf; GTK otherwise picks "output" in Documents, or in the current
-/// folder, which in an AppImage is read-only), and the page is the print
-/// preview's, since WebKitGTK takes paper and orientation from GTK, not from
-/// @page. A tab prints through its print preview, which says which tab it is.
+/// Sets up the print dialog with what the window prints (`Viewer::printing`):
+/// the PDF that "Print to File" writes is named after the printing tab's
+/// file, and the page is the print preview's, since WebKitGTK takes paper and
+/// orientation from GTK, not from @page. A tab prints through its print
+/// preview, which says which tab it is.
 pub fn prepare_prints(window: &WebviewWindow) {
-    use webkit2gtk::{PrintOperationExt, WebViewExt};
+    use webkit2gtk::WebViewExt;
     let app = window.app_handle().clone();
     let label = window.label().to_string();
     let _ = window.with_webview(move |webview| {
         webview.inner().connect_print(move |_, operation| {
-            let Some((page, file)) = crate::printing(&app, &label) else {
-                return false;
-            };
-            if let Some(file) = file {
-                let settings = operation.print_settings().unwrap_or_else(gtk::PrintSettings::new);
-                if let Some(stem) = file.file_stem() {
-                    settings.set("output-basename", Some(&stem.to_string_lossy()));
-                }
-                // A path, not a URI: GTK 3.24 joins it with the file name.
-                if let Some(dir) = file.parent() {
-                    settings.set("output-dir", Some(&dir.to_string_lossy()));
-                }
-                operation.set_print_settings(&settings);
-            }
-            let setup = gtk::PageSetup::new();
-            let (name, w, h) = if page.paper == "letter" { ("na_letter", 215.9, 279.4) } else { ("iso_a4", 210.0, 297.0) };
-            // WebKitGTK prints a landscape page blank, so landscape is a
-            // portrait page that is wider than it is tall.
-            let paper = if page.landscape {
-                gtk::PaperSize::new_custom(&format!("{name}-wide"), &format!("{name} landscape"), h, w, gtk::Unit::Mm)
-            } else {
-                gtk::PaperSize::new(Some(name))
-            };
-            setup.set_paper_size(&paper);
-            setup.set_orientation(gtk::PageOrientation::Portrait);
-            setup.set_top_margin(page.margin, gtk::Unit::Mm);
-            setup.set_bottom_margin(page.margin, gtk::Unit::Mm);
-            setup.set_left_margin(page.margin, gtk::Unit::Mm);
-            setup.set_right_margin(page.margin, gtk::Unit::Mm);
-            operation.set_page_setup(&setup);
+            // Printing without a print preview keeps GTK's defaults.
+            let _ = app.state::<Viewer>().printing(&label).inspect(|print| set_up(operation, print));
             false // go on to the print dialog
         });
     });
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn set_up(operation: &webkit2gtk::PrintOperation, print: &Print) {
+    use webkit2gtk::PrintOperationExt;
+    operation.set_print_settings(&print_settings(operation.print_settings(), print));
+    operation.set_page_setup(&page_setup(print));
+}
 
-    #[test]
-    fn exec_quotes_and_escapes_the_path() {
-        assert_eq!(exec_arg("/home/ana/CSSV Viewer.AppImage"), r#""/home/ana/CSSV Viewer.AppImage""#);
-        // Quoting escapes " ` $ \, then the string value doubles each backslash.
-        assert_eq!(exec_arg(r#"/a"b`c$d\e"#), r#""/a\\"b\\`c\\$d\\\\e""#);
-        assert_eq!(exec_arg("/100%/x.AppImage"), r#""/100%%/x.AppImage""#);
+/// The print settings, with the name and folder of the PDF.
+fn print_settings(settings: Option<gtk::PrintSettings>, print: &Print) -> gtk::PrintSettings {
+    let settings = settings.unwrap_or_default();
+    for (key, value) in &print.settings {
+        settings.set(key, Some(value));
     }
+    settings
+}
 
-    #[test]
-    fn string_values_escape_backslashes_and_read_back() {
-        let path = r"/opt/a\b c/x.AppImage";
-        assert_eq!(string_value(path), r"/opt/a\\b c/x.AppImage");
-        assert_eq!(unescape(&string_value(path)), path);
-        assert_eq!(unescape(r"a\sb\tc\\d"), "a b\tc\\d");
-    }
-
-    #[test]
-    fn paths_with_control_characters_are_refused() {
-        assert_eq!(entry_text(Path::new("/home/ana/x.AppImage")), Ok("/home/ana/x.AppImage"));
-        for path in ["/tmp/a\nExec=evil", "/tmp/a\rb", "/tmp/a\tb", "/tmp/a\u{1b}b", "/tmp/a\u{7f}b"] {
-            assert!(entry_text(Path::new(path)).is_err(), "{path:?}");
-        }
-        let entry = std::env::temp_dir().join(format!("cssv-viewer-test-{}", std::process::id()));
-        assert!(write_entry(&entry, Path::new("/tmp/a\nb")).is_err());
-        assert!(!entry_path(&entry).exists());
-    }
+fn page_setup(print: &Print) -> gtk::PageSetup {
+    let paper = match &print.paper {
+        Paper::Standard(name) => gtk::PaperSize::new(Some(name)),
+        Paper::Custom(name, shown, width, height) => gtk::PaperSize::new_custom(name, shown, *width, *height, gtk::Unit::Mm),
+    };
+    let setup = gtk::PageSetup::new();
+    setup.set_paper_size(&paper);
+    setup.set_orientation(gtk::PageOrientation::Portrait);
+    setup.set_top_margin(print.margin, gtk::Unit::Mm);
+    setup.set_bottom_margin(print.margin, gtk::Unit::Mm);
+    setup.set_left_margin(print.margin, gtk::Unit::Mm);
+    setup.set_right_margin(print.margin, gtk::Unit::Mm);
+    setup
 }

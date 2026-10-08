@@ -1,0 +1,3 @@
+# The code's own width: a call or a condition stays on one line.
+max_width = 150
+use_small_heuristics = "Max"

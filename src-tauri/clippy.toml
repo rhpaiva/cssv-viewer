@@ -1,0 +1,2 @@
+# Names the comments use as words, not code.
+doc-valid-idents = ["AppImage", "AppRun", "TryExec", "WebKitGTK", ".."]
