@@ -118,8 +118,9 @@ export function createPrint({ host, source }) {
   for (const control of [size, orientation, scale, margins, bg]) control.addEventListener('change', layout);
   $('print-close').addEventListener('click', close);
   $('print-go').addEventListener('click', () => window.print());
-  view.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
+  // Escape closes the preview, wherever the focus is.
+  addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || view.hidden) return;
     e.preventDefault();
     close();
   });
