@@ -4,6 +4,10 @@
 //
 //   npm run appimage                       builds the viewer, then the AppImage
 //   npm run appimage -- --binary <path>    packs an already built viewer
+//   npm run appimage -- --out <path>       writes the AppImage there instead of in dist/,
+//                                          with its work folder (.appimage) beside it
+//   npm run appimage -- --keyring <path>   checks the packages against that keyring
+//                                          instead of the ubuntu-keyring package's
 //
 // It needs a Debian or Ubuntu system with apt (packages are only downloaded,
 // never installed, so no root) and Ubuntu's archive key (the ubuntu-keyring
@@ -30,8 +34,6 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.dirname(here);
-const work = path.join(desktop, 'dist', '.appimage');
-const out = path.join(desktop, 'dist', 'CSSV-Viewer-x86_64.AppImage');
 const ARCH = 'x86_64-linux-gnu';
 
 // The packages to start from; apt adds their dependencies.
@@ -64,6 +66,11 @@ const arg = (name) => {
 };
 const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 
+// The AppImage, and the folder the build works in beside it.
+const out = path.resolve(arg('--out') ?? path.join(desktop, 'dist', 'CSSV-Viewer-x86_64.AppImage'));
+const work = path.join(path.dirname(out), '.appimage');
+const keyring = arg('--keyring') ?? KEYRING;
+
 // A pinned download at `file`, downloaded again unless it has the SHA-256.
 async function pinned(file, { url, sha256: want }) {
   if (fs.existsSync(file) && sha256(fs.readFileSync(file)) === want) return file;
@@ -77,8 +84,8 @@ async function pinned(file, { url, sha256: want }) {
   return file;
 }
 
-if (!fs.existsSync(KEYRING)) {
-  console.error(`appimage: ${KEYRING} is missing; install the ubuntu-keyring package, which apt needs to check Ubuntu's packages`);
+if (!fs.existsSync(keyring)) {
+  console.error(`appimage: ${keyring} is missing; install the ubuntu-keyring package, which apt needs to check Ubuntu's packages`);
   process.exit(1);
 }
 
@@ -113,7 +120,7 @@ for (const dir of ['etc/apt/apt.conf.d', 'etc/apt/preferences.d', 'etc/apt/sourc
 fs.mkdirSync(debs, { recursive: true });
 fs.writeFileSync(path.join(apt, 'var/lib/dpkg/status'), '');
 fs.writeFileSync(path.join(apt, 'etc/apt/sources.list'), ['jammy', 'jammy-updates', 'jammy-security']
-  .map((suite) => `deb [signed-by=${KEYRING}] http://${suite.endsWith('security') ? 'security' : 'archive'}.ubuntu.com/ubuntu ${suite} main universe\n`).join(''));
+  .map((suite) => `deb [signed-by=${keyring}] http://${suite.endsWith('security') ? 'security' : 'archive'}.ubuntu.com/ubuntu ${suite} main universe\n`).join(''));
 fs.writeFileSync(path.join(apt, 'apt.conf'), `Dir "${apt}/";
 Dir::State "${apt}/var/lib/apt";
 Dir::State::status "${apt}/var/lib/dpkg/status";
