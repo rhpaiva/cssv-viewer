@@ -448,6 +448,12 @@ async function open(path) {
     showProblems();
   });
   table.addEventListener('cssv-loadend', () => find.refresh());
+  // The table fades in once it first renders (viewer.css).
+  status('Opening…');
+  table.addEventListener('cssv-loadend', () => {
+    table.classList.add('shown');
+    status('');
+  }, { once: true });
   table.src = state.url; // relative URLs in the style block resolve against the file (4.3)
   $('stage').replaceChildren(table, marks);
   await readText();
@@ -489,7 +495,10 @@ $('source').addEventListener('click', () => source.toggle());
 // viewer's own colors do. It applies to every window.
 const THEMES = [['system', 'Match the system'], ['light', 'Light'], ['dark', 'Dark']];
 function applyTheme(theme) {
-  win.setTheme(theme === 'light' || theme === 'dark' ? theme : null).catch(() => {});
+  const chosen = theme === 'light' || theme === 'dark' ? theme : null;
+  win.setTheme(chosen).catch(() => {});
+  if (chosen) document.documentElement.dataset.theme = chosen; // the viewer's own colors (viewer.css)
+  else delete document.documentElement.dataset.theme;
   const label = `Light or dark: ${THEMES.find(([v]) => v === theme)?.[1] ?? THEMES[0][1]}`;
   $('theme').title = label;
   $('theme').setAttribute('aria-label', label);

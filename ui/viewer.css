@@ -1,46 +1,32 @@
 /* CSSV Viewer: the window around the table. The table's own look comes
    from its file; it only inherits font and color from here (SPEC 8.1). */
+/* Each color as its light and dark value. The window follows the system,
+   or the theme chosen in the toolbar (data-theme, set by boot.js before the
+   page is drawn and by viewer.js). */
 :root {
   color-scheme: light dark;
-  --bg: #f7f5f0;
-  --bg-alt: #efece4;
-  --surface: #fffdf9;
-  --text: #1c1a17;
-  --muted: #625c52;
-  --border: #e3ded3;
-  --mark: #ffe45c;
-  --focus: #806400;
-  --pressed: #fbf0b8;
-  --pressed-line: #c9a500;
-  --hover: rgb(28 26 23 / 0.07);
-  --warn-bg: #fcf3c4;
-  --bad: #b4232c;
-  --code-bg: #1c1a17;
-  --code-bar: #24221e;
+  --bg: light-dark(#f7f5f0, #0d0d0c);
+  --bg-alt: light-dark(#efece4, #1f1e1b);
+  --surface: light-dark(#fffdf9, #161614);
+  --text: light-dark(#1c1a17, #ece8df);
+  --muted: light-dark(#625c52, #a39d91);
+  --border: light-dark(#e3ded3, #2a2924);
+  --mark: light-dark(#ffe45c, #e9d54a);
+  --focus: light-dark(#806400, #e9d54a);
+  --pressed: light-dark(#fbf0b8, #3a3417);
+  --pressed-line: light-dark(#c9a500, #a8931c);
+  --hover: light-dark(rgb(28 26 23 / 0.07), rgb(236 232 223 / 0.08));
+  --warn-bg: light-dark(#fcf3c4, #2a2715);
+  --bad: light-dark(#b4232c, #f87171);
+  --code-bg: light-dark(#1c1a17, #121210);
+  --code-bar: light-dark(#24221e, #1a1917);
   --code-text: #e3dfd3;
   --code-muted: #857f73;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d0d0c;
-    --bg-alt: #1f1e1b;
-    --surface: #161614;
-    --text: #ece8df;
-    --muted: #a39d91;
-    --border: #2a2924;
-    --mark: #e9d54a;
-    --focus: #e9d54a;
-    --pressed: #3a3417;
-    --pressed-line: #a8931c;
-    --hover: rgb(236 232 223 / 0.08);
-    --warn-bg: #2a2715;
-    --bad: #f87171;
-    --code-bg: #121210;
-    --code-bar: #1a1917;
-  }
-}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 html, body { height: 100%; }
 body {
@@ -190,6 +176,11 @@ button.primary { background: var(--text); color: var(--bg); border-color: var(--
 .work { position: relative; display: flex; flex: 1; min-height: 0; }
 main { position: relative; flex: 1; min-width: 0; overflow: auto; padding: 24px; }
 cssv-table { font: 15px/1.45 var(--sans); color: var(--text); }
+/* A window opening a file shows no home while it loads (boot.js); the table
+   fades in once it has rendered. */
+html.opening #home { display: none; }
+#stage > cssv-table { opacity: 0; transition: opacity 0.2s ease-out; }
+#stage > cssv-table.shown { opacity: 1; }
 .marks { position: absolute; inset: 0 auto auto 0; z-index: 1; pointer-events: none; }
 .mark { position: absolute; background: rgb(255 228 92 / 0.38); box-shadow: inset 0 0 0 1px rgb(201 165 0 / 0.7); }
 .mark.current { background: rgb(255 200 40 / 0.6); box-shadow: inset 0 0 0 2px #b08900; }
@@ -381,7 +372,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-wid
 
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
-  .status { transition: none; }
+  .status, #stage > cssv-table { transition: none; }
   .source-band.flash { animation: none; }
 }
 
