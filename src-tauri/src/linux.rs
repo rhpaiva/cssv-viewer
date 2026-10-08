@@ -55,7 +55,7 @@ fn icon_paths(data: &Path) -> impl Iterator<Item = (PathBuf, &'static [u8])> + '
 /// The AppImage our menu entry runs, if the entry is ours.
 fn installed_for(data: &Path) -> Option<PathBuf> {
     let text = std::fs::read_to_string(entry_path(data)).ok()?;
-    text.lines().find_map(|line| line.strip_prefix(MARK)).map(PathBuf::from)
+    text.lines().find_map(|line| line.strip_prefix(MARK)).map(|value| PathBuf::from(unescape(value)))
 }
 
 pub fn status() -> Integration {
@@ -64,27 +64,67 @@ pub fn status() -> Integration {
     Integration { available, installed }
 }
 
-/// A value for Exec=, quoted as the Desktop Entry spec asks.
-fn exec_arg(path: &Path) -> String {
-    let mut out = String::from('"');
-    for c in path.to_string_lossy().chars() {
-        if matches!(c, '"' | '`' | '$' | '\\') {
-            out.push('\\');
-        }
-        out.push(c);
+/// The AppImage's path as the entry can hold it: in UTF-8, as the Desktop
+/// Entry spec has it, and without control characters, which would end the
+/// line or start another one.
+fn entry_text(path: &Path) -> Result<&str, String> {
+    let text = path.to_str().ok_or("The AppImage's path isn't UTF-8, which a menu entry can't name.")?;
+    if text.chars().any(char::is_control) {
+        return Err(format!("The AppImage's path has a control character, which a menu entry can't name: {text:?}"));
     }
-    out.push('"');
+    Ok(text)
+}
+
+/// A string value (TryExec=, ours): the backslash is the escape character.
+fn string_value(text: &str) -> String {
+    text.replace('\\', "\\\\")
+}
+
+/// A string value as written, read back.
+fn unescape(value: &str) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        out.push(match c {
+            '\\' => match chars.next() {
+                Some('s') => ' ',
+                Some('n') => '\n',
+                Some('t') => '\t',
+                Some('r') => '\r',
+                Some(escaped) => escaped,
+                None => '\\',
+            },
+            c => c,
+        });
+    }
     out
 }
 
+/// A value for Exec=, quoted as the Desktop Entry spec asks: inside the
+/// quotes, `"`, `` ` ``, `$` and `\` take a backslash, the whole is then a
+/// string value, whose backslashes double, and `%` doubles so it isn't a
+/// field code.
+fn exec_arg(text: &str) -> String {
+    let mut quoted = String::from('"');
+    for c in text.chars() {
+        if matches!(c, '"' | '`' | '$' | '\\') {
+            quoted.push('\\');
+        }
+        quoted.push(c);
+    }
+    quoted.push('"');
+    string_value(&quoted).replace('%', "%%")
+}
+
 fn write_entry(data: &Path, appimage: &Path) -> Result<(), String> {
+    let path = entry_text(appimage)?;
     let entry = format!(
         "[Desktop Entry]\nType=Application\nName=CSSV Viewer\nComment=A desktop viewer for CSSV files\n\
          Exec={} %F\nTryExec={}\nIcon=cssv-viewer\nTerminal=false\nCategories=Office;Viewer;\n\
          MimeType={MIME};\nStartupWMClass=cssv-viewer\n{MARK}{}\n",
-        exec_arg(appimage),
-        appimage.display(),
-        appimage.display(),
+        exec_arg(path),
+        string_value(path),
+        string_value(path),
     );
     write(&entry_path(data), entry.as_bytes())
 }
@@ -235,4 +275,36 @@ pub fn prepare_prints(window: &WebviewWindow) {
             false // go on to the print dialog
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exec_quotes_and_escapes_the_path() {
+        assert_eq!(exec_arg("/home/ana/CSSV Viewer.AppImage"), r#""/home/ana/CSSV Viewer.AppImage""#);
+        // Quoting escapes " ` $ \, then the string value doubles each backslash.
+        assert_eq!(exec_arg(r#"/a"b`c$d\e"#), r#""/a\\"b\\`c\\$d\\\\e""#);
+        assert_eq!(exec_arg("/100%/x.AppImage"), r#""/100%%/x.AppImage""#);
+    }
+
+    #[test]
+    fn string_values_escape_backslashes_and_read_back() {
+        let path = r"/opt/a\b c/x.AppImage";
+        assert_eq!(string_value(path), r"/opt/a\\b c/x.AppImage");
+        assert_eq!(unescape(&string_value(path)), path);
+        assert_eq!(unescape(r"a\sb\tc\\d"), "a b\tc\\d");
+    }
+
+    #[test]
+    fn paths_with_control_characters_are_refused() {
+        assert_eq!(entry_text(Path::new("/home/ana/x.AppImage")), Ok("/home/ana/x.AppImage"));
+        for path in ["/tmp/a\nExec=evil", "/tmp/a\rb", "/tmp/a\tb", "/tmp/a\u{1b}b", "/tmp/a\u{7f}b"] {
+            assert!(entry_text(Path::new(path)).is_err(), "{path:?}");
+        }
+        let entry = std::env::temp_dir().join(format!("cssv-viewer-test-{}", std::process::id()));
+        assert!(write_entry(&entry, Path::new("/tmp/a\nb")).is_err());
+        assert!(!entry_path(&entry).exists());
+    }
 }
