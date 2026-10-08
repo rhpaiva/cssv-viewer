@@ -16,6 +16,22 @@ const WRAP = CSS.supports('column-wrap', 'wrap') && CSS.supports('column-height'
 const LINUX = /Linux/.test(navigator.platform);
 const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
+// Resolves when `el`'s opacity has finished its transition (viewer.css), or
+// at once when the reader asks for less motion.
+function faded(el) {
+  return new Promise((resolve) => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      el.removeEventListener('transitionend', end);
+      resolve();
+    };
+    const end = (e) => e.target === el && e.propertyName === 'opacity' && done();
+    const timer = setTimeout(done, 500);
+    el.addEventListener('transitionend', end);
+  });
+}
+
 // Printing repeats the header row on every page where the engine does;
 // columns repeat it only when it can't break, so the preview's copy says so,
 // in a layer that the file's own rules override.
@@ -52,6 +68,8 @@ export function createPrint({ host, source }) {
   const pageRule = document.head.appendChild(document.createElement('style'));
   size.value = /-(US|CA|MX|PH)$/.test(navigator.language) ? 'letter' : 'a4';
   let returnFocus = null;
+  let shown = false; // opening or open, not closing
+  let turn = 0; // the latest open() or close(); an older one stops
 
   function layout() {
     const [name, w0, h0] = PAPER[size.value];
@@ -94,8 +112,12 @@ export function createPrint({ host, source }) {
     core.invoke('set_page', { page: { paper: size.value, landscape, margin: Number(margins.value) } }).catch(() => {});
   }
 
+  // The preview is laid out while still transparent, then comes in, so its
+  // paper doesn't appear after it.
   async function open() {
-    if (!host()?.table || !view.hidden) return;
+    if (!host()?.table || shown) return;
+    shown = true;
+    const mine = ++turn;
     returnFocus = document.activeElement;
     view.hidden = false;
     // The window's language for numbers, set before the table is in the page:
@@ -106,13 +128,20 @@ export function createPrint({ host, source }) {
     $('pages').replaceChildren(table);
     await table.update(printText(...source()));
     await frame();
+    if (mine !== turn) return;
     layout();
+    view.classList.add('open');
     $('print-go').focus();
   }
 
-  function close() {
-    view.hidden = true;
+  async function close() {
+    if (!shown) return;
+    shown = false;
+    const mine = ++turn;
+    view.classList.remove('open');
     returnFocus?.focus?.();
+    await faded(view);
+    if (mine === turn) view.hidden = true;
   }
 
   for (const control of [size, orientation, scale, margins, bg]) control.addEventListener('change', layout);
@@ -120,15 +149,15 @@ export function createPrint({ host, source }) {
   $('print-go').addEventListener('click', () => window.print());
   // Escape closes the preview, wherever the focus is.
   addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || view.hidden) return;
+    if (e.key !== 'Escape' || !shown) return;
     e.preventDefault();
     close();
   });
 
   return {
     open,
-    isOpen: () => !view.hidden,
+    isOpen: () => shown,
     /** Ctrl+P: the preview first, then from the preview the print dialog. */
-    request: () => (view.hidden ? open() : window.print()),
+    request: () => (shown ? window.print() : open()),
   };
 }
