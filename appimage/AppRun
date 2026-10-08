@@ -1,0 +1,41 @@
+#!/bin/sh
+# Starts the CSSV Viewer with the libraries inside this AppImage.
+HERE="$(dirname "$(readlink -f "$0")")"
+LIB="$HERE/usr/lib/x86_64-linux-gnu"
+
+# File arguments are relative to where the viewer was started; make them
+# absolute before changing directory below.
+n=$#
+while [ "$n" -gt 0 ]; do
+  arg="$1"; shift; n=$((n - 1))
+  case "$arg" in
+    /*|-*) ;;
+    *) [ -e "${OWD:-$PWD}/$arg" ] && arg="${OWD:-$PWD}/$arg" ;;
+  esac
+  set -- "$@" "$arg"
+done
+
+# loaders.cache names the image loaders without a folder, so dlopen() looks for
+# them on the library path. Without the SVG loader GTK draws no icons: no window
+# buttons, no folders in the Open dialog.
+PIXBUF="$LIB/gdk-pixbuf-2.0/2.10.0/loaders"
+export LD_LIBRARY_PATH="$LIB:$PIXBUF${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export GIO_MODULE_DIR="$LIB/gio/modules"
+export GSETTINGS_SCHEMA_DIR="$HERE/usr/share/glib-2.0/schemas"
+export GDK_PIXBUF_MODULEDIR="$PIXBUF"
+export GDK_PIXBUF_MODULE_FILE="$LIB/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+# Leave out the system's GTK and GStreamer plugins, built for newer versions.
+# GTK loads its print backends (the printers, and Print to File) from inside
+# this AppImage instead; GTK_EXE_PREFIX moves the system folder out of its path.
+unset GTK_MODULES GTK3_MODULES
+export GTK_PATH="$LIB/gtk-3.0"
+export GTK_EXE_PREFIX="$HERE/usr"
+export GTK_IM_MODULE=gtk-im-context-simple
+export GST_PLUGIN_SYSTEM_PATH_1_0=
+export GST_REGISTRY_FORK=no
+
+# libwebkit2gtk looks for its helper processes in ././/lib/x86_64-linux-gnu/
+# webkit2gtk-4.1 (build.mjs patches the path in), relative to this directory.
+cd "$HERE/usr" || exit 1
+exec "$HERE/usr/bin/cssv-viewer" "$@"

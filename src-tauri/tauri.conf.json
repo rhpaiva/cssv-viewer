@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CSSV Viewer",
+  "version": "0.1.0",
+  "identifier": "dev.cssv.viewer",
+  "build": {
+    "frontendDist": [
+      "../ui",
+      "../node_modules/@rhpaiva/cssv/src/cssv-table.js",
+      "../node_modules/@rhpaiva/cssv/src/core.js"
+    ]
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "A desktop viewer for CSSV files",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "cssv"
+        ],
+        "name": "CSSV table",
+        "description": "Comma-Separated Styled Values",
+        "role": "Viewer",
+        "mimeType": "text/x-cssv"
+      }
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/cssv-viewer.desktop",
+        "files": {
+          "/usr/share/mime/packages/cssv-viewer.xml": "linux/cssv-viewer.xml"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "cssv-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A desktop viewer for CSSV files",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "appimage": "node appimage/build.mjs"
+  },
+  "dependencies": {
+    "@rhpaiva/cssv": "file:.."
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.1"
+  }
+}

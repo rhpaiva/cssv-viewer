@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CSSV Viewer</title>
+  <link rel="stylesheet" href="viewer.css">
+  <script type="module" src="viewer.js"></script>
+</head>
+<body>
+  <header class="bar" role="toolbar" aria-label="CSSV Viewer">
+    <div class="group split">
+      <button type="button" class="action" id="open" title="Open a file (Ctrl+O)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>Open…</button>
+      <button type="button" class="action more" id="open-more" title="Recent files" aria-label="Recent files"><svg class="i small" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    </div>
+
+    <div class="file" id="file" hidden>
+      <strong id="file-name"></strong>
+      <span id="file-folder"></span>
+    </div>
+    <span class="status" id="status" role="status" aria-live="polite"></span>
+    <button type="button" class="problems-toggle" id="problems-toggle" aria-expanded="false" aria-controls="problems" hidden></button>
+    <button type="button" class="chip" id="remote-on" title="Remote content is allowed in this window" hidden><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.4 2.6 3.5 5.4 3.5 8.5s-1.1 5.9-3.5 8.5c-2.4-2.6-3.5-5.4-3.5-8.5s1.1-5.9 3.5-8.5z"/></svg>Remote</button>
+
+    <div class="tools">
+      <div class="group">
+        <button type="button" class="tb needs-file" id="find-open" title="Find in the values (Ctrl+F)" aria-label="Find in the values (Ctrl+F)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button>
+      </div>
+      <div class="group">
+        <button type="button" class="tb needs-file" id="plain" aria-pressed="false" title="Plain view: the data without its styles" aria-label="Plain view: the data without its styles"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7V5h11v2"/><path d="M9.5 5 7 19"/><path d="M5 19h5"/><path d="m15 13 5 5"/><path d="m20 13-5 5"/></svg></button>
+        <button type="button" class="tb needs-file" id="source" aria-pressed="false" title="Source: the file's text (Ctrl+U)" aria-label="Source: the file's text (Ctrl+U)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/></svg></button>
+      </div>
+      <div class="group">
+        <button type="button" class="tb" id="theme"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path class="fill" d="M12 4a8 8 0 0 1 0 16z"/></svg></button>
+        <button type="button" class="tb text" id="numbers"></button>
+      </div>
+      <div class="group">
+        <button type="button" class="tb needs-file" id="copy" title="Copy" aria-label="Copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
+        <button type="button" class="tb needs-file" id="export" title="Save as CSV, PNG or SVG" aria-label="Save as CSV, PNG or SVG"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></svg></button>
+        <button type="button" class="tb needs-file" id="print" title="Print or save as PDF (Ctrl+P)" aria-label="Print or save as PDF (Ctrl+P)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6"/><path d="M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><path d="M6 14h12v7H6z"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <section class="notice" id="remote" aria-labelledby="remote-title" hidden>
+    <div class="notice-text">
+      <p><b id="remote-title">This file wants to load content from the internet.</b> <span>Allowing it lets the file load from any server, which tells those servers that you opened it, and a stylesheet can send them values from the table.</span></p>
+      <ul id="remote-list"></ul>
+    </div>
+    <div class="notice-actions">
+      <button type="button" class="primary" id="remote-allow">Allow</button>
+      <button type="button" id="remote-always">Always allow for this file</button>
+      <button type="button" id="remote-deny">Don't allow</button>
+    </div>
+  </section>
+
+  <section class="problems" id="problems" aria-label="Problems" hidden>
+    <ul id="problems-list"></ul>
+  </section>
+
+  <div class="work">
+    <main id="stage">
+      <div class="empty" id="empty">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <rect class="tile" width="32" height="32" rx="8"/>
+          <g class="braces" fill="none" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12.8 7.5C10.5 7.5 9.5 8.5 9.5 10.5V13.5C9.5 15.2 8.6 16 6.9 16C8.6 16 9.5 16.8 9.5 18.5V21.5C9.5 23.5 10.5 24.5 12.8 24.5"/>
+            <path d="M19.2 7.5C21.5 7.5 22.5 8.5 22.5 10.5V13.5C22.5 15.2 23.4 16 25.1 16C23.4 16 22.5 16.8 22.5 18.5V21.5C22.5 23.5 21.5 24.5 19.2 24.5"/>
+          </g>
+          <path fill="#ffe45c" transform="translate(16 19) scale(1.2) translate(-16 -19)" d="M16 15.6a2.25 2.25 0 0 1 2.25 2.25c0 2.5-1.25 4.4-3.3 5.35l-.75-1.15c1.05-.6 1.7-1.35 1.9-2.25A2.25 2.25 0 1 1 16 15.6z"/>
+        </svg>
+        <h1>Open a <mark>.cssv</mark> file</h1>
+        <p>Drop it on this window, or choose one.</p>
+        <button type="button" class="primary" id="open-empty">Choose a file…</button>
+        <p class="hint"><kbd id="mod">Ctrl</kbd> <kbd>O</kbd> opens a file from anywhere in the viewer.</p>
+
+        <section class="setup" id="setup" aria-labelledby="setup-title" hidden>
+          <h2 id="setup-title">Open .cssv files with a double-click</h2>
+          <p>Adds CSSV Viewer to your applications and makes it the app for <code>.cssv</code> files, with its icon in the dock.</p>
+          <div class="setup-actions">
+            <button type="button" class="primary" id="setup-yes">Set up</button>
+            <button type="button" id="setup-no">Not now</button>
+          </div>
+        </section>
+
+        <section class="recent" id="recent" aria-labelledby="recent-title" hidden>
+          <h2 id="recent-title">Recent files</h2>
+          <ul id="recent-list"></ul>
+        </section>
+      </div>
+    </main>
+
+    <div class="divider" id="source-divider" role="separator" aria-orientation="vertical" aria-label="Resize the source" tabindex="0" hidden></div>
+    <aside class="source" id="source-pane" aria-label="Source" hidden>
+      <div class="source-head"><strong>Source</strong><span id="source-info"></span></div>
+      <div class="source-scroll" id="source-scroll">
+        <div class="source-lines">
+          <div class="source-band" id="source-band" hidden></div>
+          <pre class="gutter" id="source-gutter" aria-hidden="true"></pre>
+          <pre class="code" id="source-code" tabindex="0"></pre>
+        </div>
+      </div>
+    </aside>
+
+    <div class="find" id="find" role="search" aria-label="Find" hidden>
+      <div class="find-row">
+        <input id="find-text" type="text" placeholder="Find in the values" aria-label="Find" spellcheck="false" autocomplete="off">
+        <span class="find-count" id="find-count" aria-live="polite"></span>
+        <button type="button" class="tb" id="find-prev" title="Previous match (Shift+Enter)" aria-label="Previous match (Shift+Enter)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg></button>
+        <button type="button" class="tb" id="find-next" title="Next match (Enter)" aria-label="Next match (Enter)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <button type="button" class="tb" id="find-close" title="Close (Escape)" aria-label="Close (Escape)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg></button>
+      </div>
+      <div class="find-opts">
+        <label><input type="checkbox" id="find-case"> Match case</label>
+        <label><input type="checkbox" id="find-whole"> Whole cell</label>
+        <span>Searches values as the file has them.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="drop" id="drop" hidden><p>Drop to open</p></div>
+</body>
+</html>

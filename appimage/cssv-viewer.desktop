@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=CSSV Viewer
+Comment=A desktop viewer for CSSV files
+Exec=cssv-viewer %F
+Icon=cssv-viewer
+Terminal=false
+Categories=Office;Viewer;
+MimeType=text/x-cssv;
+StartupWMClass=cssv-viewer
