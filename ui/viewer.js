@@ -12,6 +12,7 @@ import { blockRows, encode, pngOf, save, selectedBlock, svgOf, tableRows, tsv } 
 import { createFind } from './find.js';
 import { menuButton } from './menu.js';
 import * as prefs from './prefs.js';
+import { createPrint } from './print.js';
 import { createSource } from './source.js';
 
 const { core, dialog, webview, webviewWindow } = window.__TAURI__;
@@ -635,13 +636,17 @@ menuButton($('export'), () => {
     { label: 'Image as PNG…', disabled: !ready, run: () => saveAs('png') },
     { label: 'Image as SVG…', disabled: !ready, run: () => saveAs('svg') },
     { separator: true },
-    { label: 'Print or save as PDF…', shortcut: keys('P'), disabled: !ready, run: () => window.print() },
+    { label: 'Print or save as PDF…', shortcut: keys('P'), disabled: !ready, run: () => print.open() },
   ];
 }, 'Save as');
 
-// Printing prints the table alone (viewer.css), with the file's own
-// @media print rules.
-$('print').addEventListener('click', () => window.print());
+// Printing shows a preview on paper first (print.js), then prints the table
+// alone (viewer.css), with the file's own @media print rules.
+const print = createPrint({
+  host: () => state.table,
+  source: () => [state.text, { plain: state.plain, base: state.url }],
+});
+$('print').addEventListener('click', () => print.open());
 
 // --- Keyboard ---------------------------------------------------------------
 
@@ -653,15 +658,16 @@ if (mac) {
 addEventListener('keydown', (event) => {
   const mod = mac ? event.metaKey : event.ctrlKey;
   const key = event.key.toLowerCase();
-  if (event.key === 'F3') find.next(event.shiftKey ? -1 : 1);
+  if (event.key === 'F3' && !print.isOpen()) find.next(event.shiftKey ? -1 : 1);
   else if (event.key === 'F5') location.reload();
   else if (!mod || event.altKey) return;
+  else if (key === 'p' && file) print.request();
+  else if (print.isOpen() && key !== 'w' && key !== 'q') return; // the rest wait for the preview to close
   else if (key === 'o') choose();
   else if (key === 'r') location.reload();
   else if (key === 'w') win.close();
   else if (key === 'q') core.invoke('quit');
   else if (key === 'f' && file) find.open();
-  else if (key === 'p' && file) window.print();
   else if (key === 'u' && file) source.toggle();
   else return;
   event.preventDefault();

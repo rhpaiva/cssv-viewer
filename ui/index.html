@@ -121,6 +121,36 @@
     </div>
   </div>
 
+  <section class="print-view" id="print-view" aria-label="Print preview" hidden>
+    <div class="print-bar">
+      <strong>Print preview</strong>
+      <label class="print-field">Paper
+        <select id="print-paper"><option value="a4">A4</option><option value="letter">Letter</option></select>
+      </label>
+      <label class="print-field">Orientation
+        <select id="print-orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select>
+      </label>
+      <label class="print-field">Scale
+        <select id="print-scale"><option value="fit">Fit to page width</option><option value="actual">Actual size</option></select>
+      </label>
+      <label class="print-field">Margins
+        <select id="print-margins"><option value="12">Normal</option><option value="6">Narrow</option><option value="0">None</option></select>
+      </label>
+      <label class="print-field"><input type="checkbox" id="print-bg" checked> Background colors</label>
+      <span class="print-actions">
+        <button type="button" id="print-close">Close</button>
+        <button type="button" class="primary" id="print-go"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6"/><path d="M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><path d="M6 14h12v7H6z"/></svg>Print…</button>
+      </span>
+    </div>
+    <div class="print-stage">
+      <p class="print-info" id="print-info"></p>
+      <div class="sheets" id="sheets">
+        <div class="papers" id="papers" aria-hidden="true"></div>
+        <div class="pages" id="pages"></div>
+      </div>
+    </div>
+  </section>
+
   <div class="drop" id="drop" hidden><p>Drop to open</p></div>
 </body>
 </html>

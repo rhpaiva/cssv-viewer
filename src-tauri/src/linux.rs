@@ -1,5 +1,5 @@
-// Linux only: setting up an AppImage to open .cssv files, and the name a
-// printed PDF gets.
+// Linux only: setting up an AppImage to open .cssv files, and the print
+// dialog's defaults.
 //
 // An installed package (.deb, .rpm) registers the viewer with the desktop
 // itself. An AppImage is a single file the reader runs from anywhere, so on
@@ -190,10 +190,12 @@ pub fn refresh() {
     }
 }
 
-/// Names the PDF that "Print to File" writes after the opened file, in its
-/// folder: budget.cssv prints to budget.pdf. GTK otherwise picks "output"
-/// in Documents, or in the current folder, which in an AppImage is read-only.
-pub fn name_prints(window: &WebviewWindow) {
+/// Sets up the print dialog: the PDF that "Print to File" writes is named
+/// after the opened file, in its folder (budget.cssv prints to budget.pdf;
+/// GTK otherwise picks "output" in Documents, or in the current folder, which
+/// in an AppImage is read-only), and the page is the print preview's, since
+/// WebKitGTK takes paper and orientation from GTK, not from @page.
+pub fn prepare_prints(window: &WebviewWindow) {
     use webkit2gtk::{PrintOperationExt, WebViewExt};
     let app = window.app_handle().clone();
     let label = window.label().to_string();
@@ -209,6 +211,24 @@ pub fn name_prints(window: &WebviewWindow) {
                     settings.set("output-dir", Some(&dir.to_string_lossy()));
                 }
                 operation.set_print_settings(&settings);
+            }
+            if let Some(page) = crate::page_of(&app, &label) {
+                let setup = gtk::PageSetup::new();
+                let (name, w, h) = if page.paper == "letter" { ("na_letter", 215.9, 279.4) } else { ("iso_a4", 210.0, 297.0) };
+                // WebKitGTK prints a landscape page blank, so landscape is a
+                // portrait page that is wider than it is tall.
+                let paper = if page.landscape {
+                    gtk::PaperSize::new_custom(&format!("{name}-wide"), &format!("{name} landscape"), h, w, gtk::Unit::Mm)
+                } else {
+                    gtk::PaperSize::new(Some(name))
+                };
+                setup.set_paper_size(&paper);
+                setup.set_orientation(gtk::PageOrientation::Portrait);
+                setup.set_top_margin(page.margin, gtk::Unit::Mm);
+                setup.set_bottom_margin(page.margin, gtk::Unit::Mm);
+                setup.set_left_margin(page.margin, gtk::Unit::Mm);
+                setup.set_right_margin(page.margin, gtk::Unit::Mm);
+                operation.set_page_setup(&setup);
             }
             false // go on to the print dialog
         });

@@ -376,6 +376,53 @@ kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-wid
   .source-band.flash { animation: none; }
 }
 
+/* Print preview (print.js): the table on paper, as the printer gets it,
+   over the whole window. */
+.print-view { position: fixed; inset: 0; z-index: 25; display: flex; flex-direction: column; background: var(--bg-alt); }
+.print-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 13px;
+}
+.print-bar strong { margin-inline-end: 6px; font-size: 14px; }
+.print-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.print-bar select {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.print-actions { display: flex; gap: 8px; margin-inline-start: auto; }
+.print-actions button { display: inline-flex; align-items: center; gap: 7px; height: 30px; }
+.print-info { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; text-align: center; }
+.print-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 32px;
+  background-image: radial-gradient(color-mix(in srgb, var(--muted) 30%, transparent) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+}
+/* Each page is a sheet of paper. The table runs through columns one page
+   high (multicol), which split it where printing would, and a wrapped column
+   row per page stacks them; without column-wrap they run side by side. The
+   paper is white, in either theme. */
+.sheets { position: relative; margin: 0 auto; color-scheme: light; }
+.papers { position: absolute; inset: 0; pointer-events: none; }
+.sheet { position: absolute; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 18px 40px -20px rgb(0 0 0 / 0.45); }
+.sheet span { position: absolute; top: 100%; right: 0; margin-top: 6px; color: var(--muted); font: 500 11.5px/1.4 var(--sans); }
+.pages { position: relative; column-fill: auto; column-gap: 0; }
+.pages cssv-table { color: #1c1a17; }
+html.print-economy .pages cssv-table { -webkit-print-color-adjust: economy; print-color-adjust: economy; }
+
 /* Printing prints the table alone, with its backgrounds, and the file's own
    @media print rules apply. Nothing scrolls, since a scroll box prints only
    what's in view. */
@@ -383,5 +430,6 @@ kbd { font: 11px var(--mono); border: 1px solid var(--border); border-bottom-wid
   html, body { height: auto; display: block; background: none; }
   body > :not(.work), .work > :not(main), main > :not(cssv-table) { display: none !important; }
   .work, main { display: block; overflow: visible; padding: 0; }
-  cssv-table { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #stage > cssv-table { opacity: 1; zoom: var(--print-zoom, 1); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html.print-economy #stage > cssv-table { -webkit-print-color-adjust: economy; print-color-adjust: economy; }
 }

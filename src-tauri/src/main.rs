@@ -44,6 +44,8 @@ struct Viewer {
     opened: Mutex<HashMap<String, Opened>>,
     /// The folders of the recent files a home window shows previews of.
     previews: Mutex<HashMap<String, HashSet<PathBuf>>>,
+    /// The page each window's print preview set up.
+    pages: Mutex<HashMap<String, Page>>,
     /// Windows sent a file that their page hasn't opened yet.
     pending: Mutex<HashSet<String>>,
     windows: AtomicUsize,
@@ -52,6 +54,21 @@ struct Viewer {
 /// The file a window shows, if any.
 fn file_of(app: &AppHandle, label: &str) -> Option<PathBuf> {
     app.state::<Viewer>().opened.lock().unwrap().get(label).map(|o| o.path.clone())
+}
+
+/// The paper the print preview chose: "a4" or "letter", its orientation, and
+/// the margins in millimeters.
+#[derive(Clone, serde::Deserialize)]
+pub struct Page {
+    pub paper: String,
+    pub landscape: bool,
+    pub margin: f64,
+}
+
+/// The page a window's print preview set up, if it did.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn page_of(app: &AppHandle, label: &str) -> Option<Page> {
+    app.state::<Viewer>().pages.lock().unwrap().get(label).cloned()
 }
 
 /// The cssv: URL of a file. Webviews on Windows reach custom protocols
@@ -230,6 +247,13 @@ fn preview_file(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, path: S
     Ok(file_url(&path))
 }
 
+/// Keeps the print preview's page for the print dialog, which on Linux
+/// takes its paper and orientation from GTK rather than from @page.
+#[tauri::command]
+fn set_page(window: WebviewWindow, viewer: tauri::State<'_, Viewer>, page: Page) {
+    viewer.pages.lock().unwrap().insert(window.label().to_string(), page);
+}
+
 /// Quits the viewer, closing every window.
 #[tauri::command]
 fn quit(app: AppHandle) {
@@ -305,7 +329,7 @@ fn show(app: &AppHandle, path: Option<PathBuf>) {
         .build();
     match built {
         #[cfg(target_os = "linux")]
-        Ok(window) => linux::name_prints(&window),
+        Ok(window) => linux::prepare_prints(&window),
         #[cfg(not(target_os = "linux"))]
         Ok(_) => {}
         Err(error) => eprintln!("Could not open a window: {error}"),
@@ -344,13 +368,14 @@ fn main() {
         )
         .manage(Viewer::default())
         .register_uri_scheme_protocol("cssv", serve)
-        .invoke_handler(tauri::generate_handler![open_file, preview_file, save_file, quit, integration, set_integration])
+        .invoke_handler(tauri::generate_handler![open_file, preview_file, save_file, set_page, quit, integration, set_integration])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 let viewer = window.state::<Viewer>();
                 viewer.pending.lock().unwrap().remove(window.label());
                 viewer.opened.lock().unwrap().remove(window.label());
                 viewer.previews.lock().unwrap().remove(window.label());
+                viewer.pages.lock().unwrap().remove(window.label());
             }
         })
         .setup(|app| {
