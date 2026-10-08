@@ -46,10 +46,16 @@ function create(path, at) {
   tab.close = Object.assign(document.createElement('button'), { type: 'button', className: 'tab-close', tabIndex: -1 });
   tab.close.innerHTML = '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10"/><path d="M17 7 7 17"/></svg>';
   tab.el.append(tab.name, tab.close);
-  tab.el.addEventListener('click', (event) => {
-    if (tab.close.contains(event.target)) closeTab(tab);
-    else select(tab);
+  tab.close.addEventListener('click', () => closeTab(tab));
+  // A press leaves the focus in the tab's page (select) and doesn't
+  // autoscroll; the middle button closes a tab, as in browsers.
+  tab.el.addEventListener('mousedown', (event) => event.preventDefault());
+  tab.el.addEventListener('auxclick', (event) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    closeTab(tab);
   });
+  tab.el.addEventListener('pointerdown', (event) => drag(tab, event));
 
   tab.frame = Object.assign(document.createElement('iframe'), { id: `frame-${tab.id}`, hidden: true });
   tab.frame.dataset.tab = tab.id;
@@ -92,9 +98,54 @@ function navigate(tab, path) {
   label(tab);
 }
 
+// Moves `tab` one place along the strip, `by` -1 or 1. The neighbor's strip
+// element is the one that moves: moving the tab's own would end a drag (its
+// pointer capture), and frames never move, as a frame that moves reloads.
+function move(tab, by) {
+  const i = tabs.indexOf(tab);
+  const other = tabs[i + by];
+  if (!other) return;
+  [tabs[i], tabs[i + by]] = [other, tab];
+  if (by > 0) tab.el.before(other.el);
+  else tab.el.after(other.el);
+  tab.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+// Pressing a tab shows it; dragging it along the strip moves it past each
+// tab whose middle the pointer crosses.
+function drag(tab, down) {
+  if (down.button !== 0 || tab.close.contains(down.target)) return;
+  select(tab);
+  const middle = (t) => {
+    const box = t.el.getBoundingClientRect();
+    return box.left + box.width / 2;
+  };
+  const along = (event) => {
+    for (;;) {
+      const i = tabs.indexOf(tab);
+      if (i > 0 && event.clientX < middle(tabs[i - 1])) move(tab, -1);
+      else if (i < tabs.length - 1 && event.clientX > middle(tabs[i + 1])) move(tab, 1);
+      else return;
+    }
+  };
+  const end = () => {
+    tab.el.removeEventListener('pointermove', along);
+    tab.el.removeEventListener('pointerup', end);
+    tab.el.removeEventListener('pointercancel', end);
+  };
+  tab.el.setPointerCapture(down.pointerId);
+  tab.el.addEventListener('pointermove', along);
+  tab.el.addEventListener('pointerup', end);
+  tab.el.addEventListener('pointercancel', end);
+}
+
+/** Files of closed tabs, latest last, with their places, for Ctrl+Shift+T. */
+const closed = [];
+
 function closeTab(tab) {
   const i = tabs.indexOf(tab);
   if (i < 0) return;
+  if (tab.path !== null) closed.push({ path: tab.path, at: i });
   tabs.splice(i, 1);
   tab.el.remove();
   tab.frame.remove();
@@ -128,6 +179,13 @@ function home() {
   select(tabs.find((t) => t.path === null) ?? create(null, tabs.length));
 }
 
+/** The last closed tab's file, back in its place, unless it's open again. */
+function reopen() {
+  const last = closed.pop();
+  if (!last) return;
+  select(tabs.find((t) => t.path === last.path) ?? create(last.path, Math.min(last.at, tabs.length)));
+}
+
 async function choose() {
   const picked = await dialog.open({
     multiple: true,
@@ -147,9 +205,12 @@ function key(event) {
   // WebKitGTK names Shift+Tab "Unidentified"; its code is still Tab.
   const k = event.code === 'Tab' ? 'tab' : event.key.toLowerCase();
   if (event.ctrlKey && !event.altKey && (k === 'tab' || k === 'pagedown' || k === 'pageup')) {
-    step(k === 'pageup' || (k === 'tab' && event.shiftKey) ? -1 : 1);
+    const by = k === 'pageup' || (k === 'tab' && event.shiftKey) ? -1 : 1;
+    // With Shift, PgUp and PgDn move the tab instead.
+    if (event.shiftKey && k !== 'tab') move(current, by);
+    else step(by);
   } else if (!mod || event.altKey) return false;
-  else if (k === 't' && !event.shiftKey) home();
+  else if (k === 't') event.shiftKey ? reopen() : home();
   else if (k === 'w') closeTab(current);
   else if (k === 'o') choose();
   else if (k === 'q') core.invoke('quit');
