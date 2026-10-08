@@ -193,6 +193,41 @@ test('closing the preview while it opens stops it, and opening it while it close
   await tab.waitForFunction(() => document.getElementById('print-view').hidden);
 });
 
+// Ctrl+P twice in a row: the second arrives while the preview still lays
+// out its pages. With `escape`, Escape follows at once.
+const ctrlPTwice = (tab, { escape = false } = {}) => tab.evaluate((escape) => {
+  const ctrlP = () => dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true }));
+  ctrlP();
+  ctrlP();
+  if (escape) dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+}, escape);
+
+test('Ctrl+P again while the preview opens prints once the pages are laid out and printing has the paper', async () => {
+  const { tab } = await open();
+  await tab.evaluate(() => {
+    window.print = () => {
+      window.printed++;
+      window.paperSet = parent.__fake.calls.some((c) => c.cmd === 'set_page');
+    };
+  });
+  await ctrlPTwice(tab);
+  await tab.waitForFunction(() => window.printed === 1);
+  assert.equal(await tab.evaluate(() => window.paperSet), true);
+  assert.equal(await tab.$eval('#print-view', (el) => el.classList.contains('open')), true);
+});
+
+test('closing the preview before it has laid out the pages cancels a print asked for meanwhile', async () => {
+  const { tab } = await open();
+  await ctrlPTwice(tab, { escape: true });
+  await tab.waitForFunction(() => document.getElementById('print-view').hidden);
+  // The opening stops once its table has rendered.
+  await tab.evaluate(async () => {
+    await document.querySelector('#pages cssv-table').ready;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  assert.equal(await tab.evaluate(() => window.printed), 0);
+});
+
 test('the preview waits for the table: before it has drawn, Print does nothing', async () => {
   ctx.server.disk(PATH, BUDGET);
   const w = await ctx.open();

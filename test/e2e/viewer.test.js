@@ -157,16 +157,9 @@ describe('a viewer run as a reader runs it', () => {
     await until(() => desk.xdotool('getwindowname', window).startsWith('Budget'), { what: 'the file' });
     desk.xdotool('windowfocus', '--sync', window);
     desk.xdotool('mousemove', '--window', window, '500', '400', 'click', '1');
-    // Ctrl+P shows the print preview, which gives its Print button the
-    // focus once it has laid the pages out, so Return prints from then on.
-    await desk.keys('ctrl+p');
-    await until(
-      async () => {
-        await desk.keys('Return');
-        return until(() => desk.open('^Print$'), { timeout: 5000 }).catch(() => false);
-      },
-      { what: 'the print dialog', timeout: 60000 },
-    );
+    // Ctrl+P shows the print preview, and pressed again at once prints, once
+    // the preview has laid out the pages and given the dialog its paper.
+    desk.xdotool('key', 'ctrl+p', 'ctrl+p');
     const dialog = await desk.dialog('^Print$');
     // "Print to File", the only printer here, then Print.
     desk.xdotool('key', '--window', dialog, 'Down');

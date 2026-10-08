@@ -113,9 +113,12 @@ export function createPrint({ tab, host, source }) {
   }
 
   // The preview is laid out while still transparent, then comes in, so its
-  // paper doesn't appear after it.
-  async function open() {
-    if (!host()?.table || shown) return;
+  // paper doesn't appear after it. `laidOut` settles once the latest
+  // opening has laid out the pages and told printing about the paper, or
+  // has stopped.
+  let laidOut = Promise.resolve();
+  function open() {
+    if (!host()?.table || shown) return laidOut;
     shown = true;
     const mine = ++turn;
     returnFocus = document.activeElement;
@@ -126,12 +129,23 @@ export function createPrint({ tab, host, source }) {
     const lang = host().getAttribute('lang');
     if (lang) table.setAttribute('lang', lang);
     $('pages').replaceChildren(table);
-    await table.update(printText(...source()));
-    await frame();
-    if (mine !== turn) return;
-    layout();
-    view.classList.add('open');
-    $('print-go').focus();
+    laidOut = (async () => {
+      await table.update(printText(...source()));
+      await frame();
+      if (mine !== turn) return;
+      layout();
+      view.classList.add('open');
+      $('print-go').focus();
+    })();
+    return laidOut;
+  }
+
+  // Printing waits for the preview: before it has laid out the pages, the
+  // print dialog would get neither the paper nor the file's name. Closed
+  // meanwhile, it doesn't print.
+  async function print() {
+    await laidOut;
+    if (shown) window.print();
   }
 
   async function close() {
@@ -146,7 +160,7 @@ export function createPrint({ tab, host, source }) {
 
   for (const control of [size, orientation, scale, margins, bg]) control.addEventListener('change', layout);
   $('print-close').addEventListener('click', close);
-  $('print-go').addEventListener('click', () => window.print());
+  $('print-go').addEventListener('click', print);
   // Escape closes the preview, wherever the focus is.
   addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !shown) return;
@@ -158,6 +172,6 @@ export function createPrint({ tab, host, source }) {
     open,
     isOpen: () => shown,
     /** Ctrl+P: the preview first, then from the preview the print dialog. */
-    request: () => (shown ? window.print() : open()),
+    request: () => (shown ? print() : open()),
   };
 }
