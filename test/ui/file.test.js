@@ -311,6 +311,13 @@ test('a file the tab can\'t read but its table can still shows, without a title'
   assert.deepEqual(w.page.errors, []);
 });
 
+test('a file saved again while its tab opens it: a quote never closed that the text the tab read doesn\'t have has no line', async () => {
+  ctx.server.disk(PATH, cssv(null, 'Item', '"never closed'));
+  const { tab } = await openRacing((route) => route.fulfill({ body: 'Item\nRent\n', contentType: 'text/plain' }));
+  await until(async () => (await problems(tab)).length === 1);
+  assert.deepEqual(await problems(tab), ['§5 A quoted field is not terminated.']);
+});
+
 test('a file saved again while its tab opens it: a problem in the new text that the old one can\'t place has no line', async () => {
   ctx.server.disk(PATH, cssv(null, 'Item', '"never closed'));
   const { tab } = await openRacing((route) => route.fulfill({ body: '---\nno closing fence\n', contentType: 'text/plain' }));
@@ -318,8 +325,15 @@ test('a file saved again while its tab opens it: a problem in the new text that 
   assert.deepEqual(await problems(tab), ['§5 A quoted field is not terminated.']);
 });
 
-test('a quote inside a value is a letter, which the line finder can\'t follow: the problem shows without a line', async () => {
+test('a quote inside a value is a letter, as the renderer reads it: the line is where the quoted field that never ends begins', async () => {
   const { tab } = await open(cssv(null, 'a,b', 'x"y,1', '"open,2'));
   await until(async () => (await problems(tab)).length === 1);
-  assert.deepEqual(await problems(tab), ['§5 A quoted field is not terminated.']);
+  assert.deepEqual(await problems(tab), ['§5 A quoted field is not terminated. Line 3']);
+
+  // With semicolons, a comma is a letter; so is a quote after a quoted
+  // field's end, and a doubled quote inside one is a quote.
+  const lines = ['Item;Note', 'Rent;"a,b ""c"""x"', 'Food;"never', 'closed'];
+  const semi = await open(cssv('td { color: red; }', ...lines), {}, '/home/ana/semi.cssv');
+  await until(async () => (await problems(semi.tab)).length === 1);
+  assert.deepEqual(await problems(semi.tab), ['§5 A quoted field is not terminated. Line 6']);
 });

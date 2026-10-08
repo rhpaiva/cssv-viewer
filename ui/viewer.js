@@ -10,7 +10,7 @@
 // serves the file and its folder to this tab over the cssv: protocol and says
 // when the file changes.
 import './cssv-table.js';
-import { metadata, parse, rewriteCssUrls, splitFile } from './core.js';
+import { detectDelimiter, metadata, parse, rewriteCssUrls, splitFile } from './core.js';
 import { blockRows, encode, pngOf, save, selectedBlock, svgOf, tableRows, tsv } from './export.js';
 import { createFind } from './find.js';
 import { menuButton } from './menu.js';
@@ -94,6 +94,32 @@ function problemLine({ section, message }) {
   }
 }
 
+// A data section as the renderer reads its records (5): a quote opens a
+// quoted field only where a field begins, and is a letter anywhere else;
+// inside one, two quotes are one. Returns where the first `limit` line
+// breaks outside quoted fields are, and where the quoted field that never
+// ends opens (-1 if none does).
+function readData(data, limit = Infinity) {
+  const delimiter = detectDelimiter(data);
+  const breaks = [];
+  let open = -1; // the quote that opened the quoted field we're in
+  let start = true; // nothing of the current field read yet
+  for (let i = 0; i < data.length && breaks.length < limit; i++) {
+    const ch = data[i];
+    if (open >= 0) {
+      if (ch === '"' && data[i + 1] === '"') i++;
+      else if (ch === '"') open = -1;
+    } else if (ch === '\n' || ch === delimiter) {
+      if (ch === '\n') breaks.push(i);
+      start = true;
+    } else {
+      if (ch === '"' && start) open = i;
+      start = false;
+    }
+  }
+  return { breaks, open };
+}
+
 // 5: the line where the quoted field that never ends begins.
 function unterminatedQuote() {
   let data;
@@ -102,17 +128,9 @@ function unterminatedQuote() {
   } catch {
     return null;
   }
-  let line = state.text.slice(0, state.text.length - data.length).split('\n').length;
-  let quoted = false;
-  let opened = null;
-  for (const ch of data) {
-    if (ch === '\n') line++;
-    else if (ch === '"') {
-      quoted = !quoted;
-      if (quoted) opened = line;
-    }
-  }
-  return quoted ? opened : null;
+  const { open } = readData(data);
+  if (open < 0) return null; // the renderer read other text
+  return state.text.slice(0, state.text.length - data.length + open).split('\n').length;
 }
 
 // Problems the renderer reports, for the last render. Fatal ones leave the
@@ -283,16 +301,11 @@ function h(tag, props = {}, ...children) {
   return node;
 }
 
-// The first `n` records of a data section; a line break inside quotes
-// doesn't end one.
+// The first `n` records of a data section; a line break inside a quoted
+// field doesn't end one.
 function firstRecords(data, n) {
-  let quoted = false;
-  let records = 0;
-  for (let i = 0; i < data.length; i++) {
-    if (data[i] === '"') quoted = !quoted;
-    else if (data[i] === '\n' && !quoted && ++records === n) return data.slice(0, i + 1);
-  }
-  return data;
+  const { breaks } = readData(data, n);
+  return breaks.length === n ? data.slice(0, breaks[n - 1] + 1) : data;
 }
 
 // The header and the first rows. The preview has no src, so relative URLs

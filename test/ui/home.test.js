@@ -51,6 +51,17 @@ test('a preview is the file\'s first rows, with its style block and the files it
   assert.match(background, /\/disk\/home\/ana\/dot\.png/);
 });
 
+test('a preview reads quotes as the renderer does: one inside a value is a letter', async () => {
+  // Taken for one that opens a quoted field, the first quote would cut the
+  // preview inside a later quoted field with a line break.
+  const rows = Array.from({ length: 70 }, (_, i) => `${i + 1},"two\nlines"`);
+  ctx.server.disk('/home/ana/quotes.cssv', cssv(null, 'n,text', '0,5" disk', ...rows));
+  const w = await ctx.open({ storage: { recent: ['/home/ana/quotes.cssv'] } });
+  const tab = await w.home();
+  const shown = await tab.$eval('.card cssv-table', (t) => [t.errors.length, t.table?.tBodies[0].rows.length, t.table?.tBodies[0].rows[0].cells[1].textContent]);
+  assert.deepEqual(shown, [0, 60, '5" disk']);
+});
+
 test('a preview holds its animations still', async () => {
   ctx.server.disk('/home/ana/moving.cssv', cssv('@keyframes spin { to { rotate: 1turn; } } td { animation: spin 1s infinite; }', 'n', '1'));
   const w = await ctx.open({ storage: { recent: ['/home/ana/moving.cssv'] } });
