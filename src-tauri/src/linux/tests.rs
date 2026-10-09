@@ -151,6 +151,11 @@ fn installing_writes_the_entry_media_type_and_icons() {
     for (icon, png) in icon_paths(&data) {
         assert_eq!(std::fs::read(&icon).unwrap(), png, "{}", icon.display());
     }
+    // .cssv files get their own icon, down to the smallest size.
+    let hicolor = data.join("icons/hicolor");
+    let read = |icon: &str| std::fs::read(hicolor.join(icon)).unwrap();
+    assert!(read("32x32/mimetypes/text-x-cssv.png") != read("32x32/apps/cssv-viewer.png"), "the app's icon for .cssv files");
+    assert!(hicolor.join("16x16/mimetypes/text-x-cssv.png").is_file());
     let tools = desktop.tools();
     for tool in ["update-mime-database", "update-desktop-database", "gtk-update-icon-cache", "xdg-mime default cssv-viewer.desktop text/x-cssv"] {
         assert!(tools.contains(tool), "{tools}");
@@ -283,6 +288,48 @@ fn a_moved_appimage_takes_over_the_entry_of_one_that_is_gone() {
     refresh();
     let _no_home = env(&[("APPIMAGE", Some(&desktop.appimage())), ("XDG_DATA_HOME", None), ("HOME", None)]);
     refresh();
+}
+
+#[test]
+fn each_icon_is_the_size_its_folder_names() {
+    for (icon, png) in icon_paths(Path::new("/data")) {
+        let size = icon.strip_prefix("/data/icons/hicolor").unwrap().components().next().unwrap();
+        let (width, height) = (u32::from_be_bytes(png[16..20].try_into().unwrap()), u32::from_be_bytes(png[20..24].try_into().unwrap()));
+        assert_eq!(format!("{width}x{height}"), size.as_os_str().to_string_lossy(), "{}", icon.display());
+    }
+    assert_eq!(icon_paths(Path::new("/data")).count(), 4 + 9);
+}
+
+#[test]
+fn an_older_setup_gets_this_viewer_s_icons() {
+    let _turn = turn();
+    let desktop = Desktop::new();
+    let _env = desktop.env();
+    let data = desktop.data();
+    install().unwrap();
+    // Set up by 0.1.0, whose .cssv files had the app's icon, and with an icon gone.
+    let file_icon = data.join("icons/hicolor/32x32/mimetypes/text-x-cssv.png");
+    std::fs::copy(data.join("icons/hicolor/32x32/apps/cssv-viewer.png"), &file_icon).unwrap();
+    std::fs::remove_file(data.join("icons/hicolor/16x16/mimetypes/text-x-cssv.png")).unwrap();
+    std::fs::write(desktop.path("tools.log"), "").unwrap();
+    refresh();
+    for (icon, png) in icon_paths(&data) {
+        assert_eq!(std::fs::read(&icon).unwrap(), png, "{}", icon.display());
+    }
+    assert_eq!(desktop.tools().lines().collect::<Vec<_>>(), [format!("gtk-update-icon-cache -f -t {}", data.join("icons/hicolor").display())]);
+    // Up to date: nothing to do.
+    std::fs::write(desktop.path("tools.log"), "").unwrap();
+    refresh();
+    assert_eq!(desktop.tools(), "");
+
+    // Set up by another AppImage that is still there: its icons stay.
+    let other = desktop.path("other.AppImage");
+    std::fs::write(&other, "").unwrap();
+    write_entry(&data, &other).unwrap();
+    std::fs::write(&file_icon, "older").unwrap();
+    refresh();
+    assert_eq!(std::fs::read_to_string(&file_icon).unwrap(), "older");
+    assert_eq!(desktop.tools(), "");
 }
 
 #[test]

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The MSI's icon for .cssv files (bundle.windows.wix). Tauri associates
+     .cssv files with the program as "CSSV Viewer.cssv", named after the
+     product and the extension, without an icon; this gives that class the icon
+     tauri.windows.conf.json installs next to the program. Uninstalling takes
+     the value away with the component. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="CssvFileIcon" Guid="*">
+        <RegistryValue Root="HKLM" Key="Software\Classes\CSSV Viewer.cssv\DefaultIcon" Type="string" Value="[INSTALLDIR]cssv-file.ico" KeyPath="yes"/>
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

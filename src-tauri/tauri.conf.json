@@ -44,14 +44,50 @@
       "deb": {
         "desktopTemplate": "linux/cssv-viewer.desktop",
         "files": {
-          "/usr/share/mime/packages/cssv-viewer.xml": "linux/cssv-viewer.xml"
+          "/usr/share/mime/packages/cssv-viewer.xml": "linux/cssv-viewer.xml",
+          "/usr/share/icons/hicolor/16x16/mimetypes/text-x-cssv.png": "icons/file/16x16.png",
+          "/usr/share/icons/hicolor/22x22/mimetypes/text-x-cssv.png": "icons/file/22x22.png",
+          "/usr/share/icons/hicolor/24x24/mimetypes/text-x-cssv.png": "icons/file/24x24.png",
+          "/usr/share/icons/hicolor/32x32/mimetypes/text-x-cssv.png": "icons/file/32x32.png",
+          "/usr/share/icons/hicolor/48x48/mimetypes/text-x-cssv.png": "icons/file/48x48.png",
+          "/usr/share/icons/hicolor/64x64/mimetypes/text-x-cssv.png": "icons/file/64x64.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/text-x-cssv.png": "icons/file/128x128.png",
+          "/usr/share/icons/hicolor/256x256/mimetypes/text-x-cssv.png": "icons/file/256x256.png",
+          "/usr/share/icons/hicolor/512x512/mimetypes/text-x-cssv.png": "icons/file/512x512.png"
         }
       },
       "rpm": {
         "desktopTemplate": "linux/cssv-viewer.desktop",
         "files": {
-          "/usr/share/mime/packages/cssv-viewer.xml": "linux/cssv-viewer.xml"
+          "/usr/share/mime/packages/cssv-viewer.xml": "linux/cssv-viewer.xml",
+          "/usr/share/icons/hicolor/16x16/mimetypes/text-x-cssv.png": "icons/file/16x16.png",
+          "/usr/share/icons/hicolor/22x22/mimetypes/text-x-cssv.png": "icons/file/22x22.png",
+          "/usr/share/icons/hicolor/24x24/mimetypes/text-x-cssv.png": "icons/file/24x24.png",
+          "/usr/share/icons/hicolor/32x32/mimetypes/text-x-cssv.png": "icons/file/32x32.png",
+          "/usr/share/icons/hicolor/48x48/mimetypes/text-x-cssv.png": "icons/file/48x48.png",
+          "/usr/share/icons/hicolor/64x64/mimetypes/text-x-cssv.png": "icons/file/64x64.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/text-x-cssv.png": "icons/file/128x128.png",
+          "/usr/share/icons/hicolor/256x256/mimetypes/text-x-cssv.png": "icons/file/256x256.png",
+          "/usr/share/icons/hicolor/512x512/mimetypes/text-x-cssv.png": "icons/file/512x512.png"
         }
+      }
+    },
+    "macOS": {
+      "files": {
+        "Resources/cssv-file.icns": "icons/file/cssv-file.icns"
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/hooks.nsh"
+      },
+      "wix": {
+        "fragmentPaths": [
+          "windows/file-icon.wxs"
+        ],
+        "componentRefs": [
+          "CssvFileIcon"
+        ]
       }
     }
   }

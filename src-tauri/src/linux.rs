@@ -24,11 +24,23 @@ const MIME: &str = "text/x-cssv";
 /// The line in our menu entry that names the AppImage it runs.
 const MARK: &str = "X-CSSV-Viewer-AppImage=";
 const MIME_XML: &str = include_str!("../linux/cssv-viewer.xml");
-const ICONS: [(&str, &[u8]); 4] = [
+const APP_ICONS: [(&str, &[u8]); 4] = [
     ("32x32", include_bytes!("../icons/32x32.png")),
     ("128x128", include_bytes!("../icons/128x128.png")),
     ("256x256", include_bytes!("../icons/128x128@2x.png")),
     ("512x512", include_bytes!("../icons/icon.png")),
+];
+/// The icon of .cssv files (tools/file-icon.mjs), as the .deb and .rpm install it too.
+const FILE_ICONS: [(&str, &[u8]); 9] = [
+    ("16x16", include_bytes!("../icons/file/16x16.png")),
+    ("22x22", include_bytes!("../icons/file/22x22.png")),
+    ("24x24", include_bytes!("../icons/file/24x24.png")),
+    ("32x32", include_bytes!("../icons/file/32x32.png")),
+    ("48x48", include_bytes!("../icons/file/48x48.png")),
+    ("64x64", include_bytes!("../icons/file/64x64.png")),
+    ("128x128", include_bytes!("../icons/file/128x128.png")),
+    ("256x256", include_bytes!("../icons/file/256x256.png")),
+    ("512x512", include_bytes!("../icons/file/512x512.png")),
 ];
 
 /// The AppImage this viewer runs from, if it does.
@@ -47,12 +59,12 @@ fn entry_path(data: &Path) -> PathBuf {
     data.join("applications").join(ENTRY)
 }
 
-fn icon_paths(data: &Path) -> impl Iterator<Item = (PathBuf, &'static [u8])> + '_ {
-    ICONS.into_iter().flat_map(move |(size, png)| {
-        let dir = data.join("icons/hicolor").join(size);
-        // The app's icon, and the same icon for .cssv files in file managers.
-        [(dir.join("apps/cssv-viewer.png"), png), (dir.join("mimetypes/text-x-cssv.png"), png)]
-    })
+/// The app's icon, and the icon of .cssv files in file managers.
+fn icon_paths(data: &Path) -> impl Iterator<Item = (PathBuf, &'static [u8])> {
+    let hicolor = data.join("icons/hicolor");
+    let apps = APP_ICONS.map(|(size, png)| (hicolor.join(size).join("apps/cssv-viewer.png"), png));
+    let files = FILE_ICONS.map(|(size, png)| (hicolor.join(size).join("mimetypes/text-x-cssv.png"), png));
+    apps.into_iter().chain(files)
 }
 
 /// The AppImage our menu entry runs, if the entry is ours.
@@ -237,14 +249,24 @@ fn forget_default() {
 }
 
 /// At start: if the menu entry runs an AppImage that is gone (moved, or
-/// replaced by a newer download), point it at this one.
+/// replaced by a newer download), point it at this one. The entry's icons
+/// then become this viewer's, in case an older one set them up.
 pub fn refresh() {
     let (Some(appimage), Some(data)) = (appimage(), data_home()) else { return };
-    if let Some(old) = installed_for(&data) {
-        if old != appimage && !old.is_file() {
-            let _ = write_entry(&data, &appimage);
-            host("update-desktop-database", &[&data.join("applications").to_string_lossy()]);
+    let Some(old) = installed_for(&data) else { return };
+    if old != appimage {
+        if old.is_file() {
+            return; // another AppImage's
         }
+        let _ = write_entry(&data, &appimage);
+        host("update-desktop-database", &[&data.join("applications").to_string_lossy()]);
+    }
+    let stale: Vec<_> = icon_paths(&data).filter(|(path, png)| std::fs::read(path).ok().as_deref() != Some(*png)).collect();
+    if !stale.is_empty() {
+        for (path, png) in stale {
+            let _ = write(&path, png);
+        }
+        host("gtk-update-icon-cache", &["-f", "-t", &data.join("icons/hicolor").to_string_lossy()]);
     }
 }
 
