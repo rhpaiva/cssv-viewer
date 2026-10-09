@@ -1,7 +1,10 @@
 # Builds the viewer for Linux (AppImage, .deb, .rpm), macOS and Windows, and
 # attaches the files to a GitHub release for each v* tag. The tag is an
 # annotated one whose message is the version, a blank line and the
-# changelog; the changelog becomes the release's notes.
+# changelog; the changelog becomes the release's notes. The files are
+# renamed without the version, so releases/latest/download/<name> always
+# gives the newest (cssv.dev links there), and a tag with a hyphen
+# (v0.2.0-rc.1) makes a pre-release, which that link skips.
 name: Build
 
 on:
@@ -93,5 +96,33 @@ jobs:
           fi
           # The message without its first line, the version, and the blank one after it.
           gh api "repos/$GH_REPO/git/tags/$(jq -r .object.sha <<<"$ref")" --jq .message | tail -n +3 > notes.md
-          mapfile -t files < <(find artifacts -type f)
-          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag "${files[@]}"
+          # One fixed name for each kind of file.
+          declare -A names=(
+            [AppImage]=CSSV-Viewer-x86_64.AppImage
+            [deb]=CSSV-Viewer-amd64.deb
+            [rpm]=CSSV-Viewer-x86_64.rpm
+            [dmg]=CSSV-Viewer-macOS.dmg
+            [exe]=CSSV-Viewer-Windows-setup.exe
+            [msi]=CSSV-Viewer-Windows.msi
+          )
+          mkdir release
+          while IFS= read -r -d '' file; do
+            name=${names[${file##*.}]:-}
+            if [ -z "$name" ]; then
+              echo "$file: not a kind of file a release has" >&2
+              exit 1
+            elif [ -e "release/$name" ]; then
+              echo "$file: a second $name" >&2
+              exit 1
+            fi
+            mv "$file" "release/$name"
+          done < <(find artifacts -type f -print0)
+          for name in "${names[@]}"; do
+            if [ ! -e "release/$name" ]; then
+              echo "The builds made no $name" >&2
+              exit 1
+            fi
+          done
+          prerelease=()
+          if [[ $TAG == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag "${prerelease[@]}" release/*

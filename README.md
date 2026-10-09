@@ -94,4 +94,4 @@ Changing an imported stylesheet doesn't update the tab by itself; reload it.
 
 ## Releases
 
-[`.github/workflows/build.yml`](.github/workflows/build.yml) builds the AppImage, the Linux packages and the macOS and Windows installers for each pull request, and attaches them to a GitHub release for each `v*` tag.
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds the AppImage, the Linux packages and the macOS and Windows installers for each pull request, and attaches them to a GitHub release for each `v*` tag. The release names them without the version (`CSSV-Viewer-x86_64.AppImage`, `-amd64.deb`, `-x86_64.rpm`, `-macOS.dmg`, `-Windows-setup.exe`, `-Windows.msi`), so `https://github.com/rhpaiva/cssv-viewer/releases/latest/download/<name>` always gives the newest one, which is where [cssv.dev](https://cssv.dev/viewer.html#download) links. A tag with a hyphen, such as `v0.2.0-rc.1`, makes a pre-release, which that link skips.
