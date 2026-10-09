@@ -263,7 +263,6 @@ fn opening_a_file_serves_its_folder_and_tells_of_new_versions() {
     let changed = Box::new(move || sender.send(()).unwrap());
     let file = dir.path().join("a.cssv");
     let url = viewer.open("viewer-1", "t1", &path_text(&file), changed).unwrap();
-    let canonical = std::fs::canonicalize(&file).unwrap();
     assert_eq!(url, file_url("t1", &file));
     assert_eq!(viewer.file_of("t1"), Some(file.clone()));
     // Another file in the folder changes: no news.
@@ -271,7 +270,7 @@ fn opening_a_file_serves_its_folder_and_tells_of_new_versions() {
     assert!(heard.recv_timeout(Duration::from_millis(600)).is_err());
     std::fs::write(&file, "a new version").unwrap();
     heard.recv_timeout(Duration::from_secs(5)).expect("the tab hears of the new version");
-    let response = viewer.read_at("viewer-1", Some(("t1", canonical)), None, MAX_FILE);
+    let response = viewer.read_at("viewer-1", Some(("t1", file.clone())), None, MAX_FILE);
     assert_eq!(body(&response), "a new version");
 }
 
@@ -297,7 +296,7 @@ fn a_home_tab_reads_the_recent_files_it_previews() {
     let (a, b) = (one.path().join("a.cssv"), two.path().join("b.cssv"));
     assert_eq!(viewer.preview("viewer-1", "home1", &path_text(&a)), Ok(file_url("home1", &a)));
     assert_eq!(viewer.preview("viewer-1", "home1", &path_text(&b)), Ok(file_url("home1", &b)));
-    let read = |path: &Path| viewer.read_at("viewer-1", Some(("home1", std::fs::canonicalize(path).unwrap())), None, MAX_FILE);
+    let read = |path: &Path| viewer.read_at("viewer-1", Some(("home1", path.to_path_buf())), None, MAX_FILE);
     assert_eq!(body(&read(&one.path().join("a.css"))), "s");
     assert_eq!(body(&read(&b)), "b");
     assert_eq!(viewer.preview("viewer-1", "home-1", &path_text(&a)), Err("Malformed tab id.".into()));
@@ -377,7 +376,10 @@ fn the_protocol_serves_a_tab_its_files_only() {
     let viewer = Viewer::default();
     let file = dir.path().join("a.cssv");
     viewer.open("viewer-1", "t1", &path_text(&file), nothing()).unwrap();
-    let root = std::fs::canonicalize(dir.path()).unwrap();
+    // Paths as `url_path` makes them of a request: not canonical. (On Windows
+    // a canonical path is a verbatim one, \\?\C:\…, which no URL makes and
+    // which the protocol refuses as a network path.)
+    let root = dir.path();
     let get = |window: &str, tab: &str, path: PathBuf| viewer.read_at(window, Some((tab, path)), None, MAX_FILE);
     let status = |response: Response<Cow<'static, [u8]>>| (response.status(), body(&response));
 
