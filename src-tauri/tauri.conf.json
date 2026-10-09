@@ -46,6 +46,12 @@
         "files": {
           "/usr/share/mime/packages/cssv-viewer.xml": "linux/cssv-viewer.xml"
         }
+      },
+      "rpm": {
+        "desktopTemplate": "linux/cssv-viewer.desktop",
+        "files": {
+          "/usr/share/mime/packages/cssv-viewer.xml": "linux/cssv-viewer.xml"
+        }
       }
     }
   }

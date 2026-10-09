@@ -50,7 +50,7 @@ npm run build                                # installers for this platform, in 
 npm run appimage                             # dist/CSSV-Viewer-x86_64.AppImage (Linux; see below)
 ```
 
-The installers register the viewer for `.cssv` files: the `.deb` adds the `text/x-cssv` media type (CSSV has none registered yet, §3.3), and the macOS and Windows installers add the file extension.
+The installers register the viewer for `.cssv` files: the `.deb` and the `.rpm` add the `text/x-cssv` media type (CSSV has none registered yet, §3.3), and the macOS and Windows installers add the file extension.
 
 ### The AppImage
 
