@@ -1,5 +1,7 @@
 # CSSV Viewer
 
+[![CI](https://img.shields.io/github/actions/workflow/status/rhpaiva/cssv-viewer/test.yml?branch=main&label=CI)](https://github.com/rhpaiva/cssv-viewer/actions/workflows/test.yml) [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/rhpaiva/cssv-viewer/actions/workflows/test.yml) [![Release](https://img.shields.io/github/v/release/rhpaiva/cssv-viewer)](https://github.com/rhpaiva/cssv-viewer/releases/latest)
+
 A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shell around `<cssv-table>`: the window is a web view, and the table in it is rendered by `src/cssv-table.js` from the [`@rhpaiva/cssv`](https://www.npmjs.com/package/@rhpaiva/cssv) package, the same renderer [cssv.dev](https://cssv.dev) uses, loaded unchanged. Section numbers (§) refer to the [CSSV specification](https://cssv.dev/spec.html).
 
 - One window, with a tab for each file, named after the file's title (§4.6) or, without one, the file's name. A file opened from the file manager or the command line while the viewer runs opens in a tab of the running viewer. From the viewer (**Open…**, a recent file, a drop), a file opens in the current tab when that's the home, and otherwise in a new tab after it. A file that's open already shows its tab.
