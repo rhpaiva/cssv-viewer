@@ -1,6 +1,6 @@
 # CSSV Viewer
 
-[![CI](https://img.shields.io/github/actions/workflow/status/rhpaiva/cssv-viewer/test.yml?branch=main&label=CI)](https://github.com/rhpaiva/cssv-viewer/actions/workflows/test.yml) [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/rhpaiva/cssv-viewer/actions/workflows/test.yml) [![Release](https://img.shields.io/github/v/release/rhpaiva/cssv-viewer)](https://github.com/rhpaiva/cssv-viewer/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/rhpaiva/cssv-viewer/test.yml?branch=main&label=CI)](https://github.com/rhpaiva/cssv-viewer/actions/workflows/test.yml) [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/rhpaiva/cssv-viewer/actions/workflows/test.yml) [![Mutation score](https://img.shields.io/badge/mutation%20score-99%25-brightgreen)](https://github.com/rhpaiva/cssv-viewer/actions/workflows/test.yml) [![Release](https://img.shields.io/github/v/release/rhpaiva/cssv-viewer)](https://github.com/rhpaiva/cssv-viewer/releases/latest)
 
 A desktop app that opens `.cssv` files. It is a [Tauri](https://tauri.app/) shell around `<cssv-table>`: the window is a web view, and the table in it is rendered by `src/cssv-table.js` from the [`@rhpaiva/cssv`](https://www.npmjs.com/package/@rhpaiva/cssv) package, the same renderer [cssv.dev](https://cssv.dev) uses, loaded unchanged. Section numbers (§) refer to the [CSSV specification](https://cssv.dev/spec.html).
 
@@ -68,6 +68,7 @@ An AppImage registers nothing by itself. The home offers to set it up: that adds
 npm test                 # the UI's and the AppImage build's tests, then the Rust tests
 npm run lint             # shellcheck, rustfmt, clippy, cargo-deny and cargo-shear
 npm run coverage         # every test, failing below 100% of lines, functions and branches
+npm run mutate           # mutation tests of appimage/build.mjs and the Rust side; reports in reports/
 ```
 
 - `test/ui/` runs the pages of `ui/` in headless Chromium (Playwright) with a stand-in for the Tauri API, which answers each command and records the calls. Set `CHROME_PATH` to use a Chrome of your own instead of Playwright's (`npx playwright install chromium` downloads that).
@@ -77,7 +78,9 @@ npm run coverage         # every test, failing below 100% of lines, functions an
 
 `npm run coverage:js` measures the JavaScript with [c8](https://github.com/bcoe/c8) (the report is in `coverage/js/`). `npm run coverage:rust` builds the Rust tests and the viewer with [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov), runs both, and measures them together (`coverage/rust/html/`); counting branches needs a nightly toolchain (`RUST_NIGHTLY` names one; `nightly` by default). Tauri's code for reading the commands' arguments is left out, as the rest of Tauri is. The end-to-end tests need Xvfb, `dbus-daemon`, `xdotool` and WebKitWebDriver (Ubuntu's `webkit2gtk-driver` or `webkitgtk-webdriver` package).
 
-[`.github/workflows/test.yml`](.github/workflows/test.yml) runs the lints, the Rust tests on Linux, macOS and Windows, and the coverage on Linux, for every pull request and every push to `main`.
+`npm run mutate` changes the code one small edit at a time (a `<` for a `<=`, a removed line) and checks that the tests fail for each change: a change they miss is a gap in the tests. [Stryker](https://stryker-mutator.io/) mutates `appimage/build.mjs` against its tests and fails below the score in `stryker.config.json`; the 5 mutants left are equivalent ones, which no input tells apart. [cargo-mutants](https://mutants.rs/) mutates the Rust side against the unit tests, in a virtual display for the print dialog's test, and fails when one survives; `src-tauri/.cargo/mutants.toml` leaves out the window's glue, which only the real viewer runs. The pages in `ui/` aren't mutated, because each mutant would need a full browser run.
+
+[`.github/workflows/test.yml`](.github/workflows/test.yml) runs the lints, the Rust tests on Linux, macOS and Windows, the coverage and the mutation tests on Linux, for every pull request and every push to `main`.
 
 ## How it fits together
 

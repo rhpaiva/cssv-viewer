@@ -18,12 +18,16 @@
     "coverage": "npm run coverage:js && npm run coverage:rust",
     "coverage:js": "c8 npm run test:js",
     "coverage:rust": "node test/coverage-rust.js",
+    "mutate": "npm run mutate:js && npm run mutate:rust",
+    "mutate:js": "stryker run",
+    "mutate:rust": "node test/mutate-rust.js",
     "lint": "shellcheck appimage/AppRun && cd src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo deny check && cargo shear"
   },
   "dependencies": {
     "@rhpaiva/cssv": "^0.5.0"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^10.0.0",
     "@tauri-apps/cli": "^2.12.1",
     "c8": "^12.0.0",
     "playwright": "^1.64.0"

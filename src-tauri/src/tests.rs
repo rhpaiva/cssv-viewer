@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use std::sync::{mpsc, Mutex, MutexGuard};
 
 use notify_debouncer_mini::notify;
 use notify_debouncer_mini::{DebouncedEvent, DebouncedEventKind};
@@ -7,6 +7,14 @@ use proptest::prelude::*;
 use tauri::http::HeaderValue;
 
 use super::*;
+
+/// Tests that set the process's variables, or read them through `home()`,
+/// which keeps the first answer, take turns (cargo nextest runs each test
+/// in a process of its own anyway).
+pub(crate) fn turn() -> MutexGuard<'static, ()> {
+    static TURN: Mutex<()> = Mutex::new(());
+    TURN.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 fn served(root: &str, file: &str) -> Served {
     Served { root: PathBuf::from(root), file: PathBuf::from(file) }
@@ -372,6 +380,7 @@ fn a_closed_window_takes_its_tabs_with_it() {
 
 #[test]
 fn the_protocol_serves_a_tab_its_files_only() {
+    let _turn = turn();
     let dir = folder(&[("a.cssv", "table"), ("brand.css", "b {}"), ("sub/.hidden.css", "h"), ("sub/x.png", "png")]);
     let viewer = Viewer::default();
     let file = dir.path().join("a.cssv");
@@ -398,6 +407,8 @@ fn the_protocol_serves_a_tab_its_files_only() {
     assert_eq!(status(get("viewer-1", "t1", root.join("sub/.hidden.css"))).0, StatusCode::FORBIDDEN);
     assert_eq!(status(get("viewer-1", "t1", root.parent().unwrap().to_path_buf())).0, StatusCode::FORBIDDEN);
     assert_eq!(status(get("viewer-1", "t1", root.join("sub"))), (StatusCode::NOT_FOUND, "Not a file.".into()));
+    // A file of the largest size is served, one a byte longer isn't.
+    assert_eq!(status(viewer.read_at("viewer-1", Some(("t1", root.join("brand.css"))), None, 4)), (StatusCode::OK, "b {}".into()));
     assert_eq!(
         status(viewer.read_at("viewer-1", Some(("t1", root.join("brand.css"))), None, 3)),
         (StatusCode::PAYLOAD_TOO_LARGE, "Too large.".into())
@@ -409,6 +420,25 @@ fn the_protocol_serves_a_tab_its_files_only() {
 }
 
 #[test]
+fn the_protocol_serves_files_up_to_256_mib() {
+    let _turn = turn();
+    let dir = folder(&[("a.cssv", "x")]);
+    let viewer = Viewer::default();
+    viewer.open("viewer-1", "t1", &path_text(&dir.path().join("a.cssv")), nothing()).unwrap();
+    // Files of zeros the disk doesn't hold: a font's few megabytes, and more than the limit.
+    let sized = |name: &str, len: u64| {
+        let path = dir.path().join(name);
+        std::fs::File::create(&path).unwrap().set_len(len).unwrap();
+        file_url("t1", &path)
+    };
+    let get = |url: String| viewer.read("viewer-1", url.strip_prefix(PROTOCOL.trim_end_matches('/')).unwrap());
+    let font = get(sized("big.woff2", 3 * 1024 * 1024));
+    assert_eq!((font.status(), font.body().len()), (StatusCode::OK, 3 * 1024 * 1024));
+    let huge = get(sized("huge.png", 256 * 1024 * 1024 + 1));
+    assert_eq!((huge.status(), body(&huge)), (StatusCode::PAYLOAD_TOO_LARGE, "Too large.".into()));
+}
+
+#[test]
 #[cfg(unix)]
 fn the_protocol_refuses_a_file_it_cannot_read() {
     use std::os::unix::fs::PermissionsExt;
@@ -417,8 +447,30 @@ fn the_protocol_refuses_a_file_it_cannot_read() {
     viewer.open("viewer-1", "t1", &path_text(&dir.path().join("a.cssv")), nothing()).unwrap();
     let locked = std::fs::canonicalize(dir.path().join("locked.css")).unwrap();
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
-    let response = viewer.read_at("viewer-1", Some(("t1", locked)), None, MAX_FILE);
+    let response = viewer.read_at("viewer-1", Some(("t1", locked.clone())), None, MAX_FILE);
     assert_eq!((response.status(), body(&response)), (StatusCode::NOT_FOUND, "Not found.".into()));
+    // The size comes first, without opening the file.
+    let response = viewer.read_at("viewer-1", Some(("t1", locked)), None, 0);
+    assert_eq!((response.status(), body(&response)), (StatusCode::PAYLOAD_TOO_LARGE, "Too large.".into()));
+}
+
+#[test]
+fn the_protocol_knows_the_reader_s_home_folder() {
+    let _turn = turn();
+    // A file in the home folder, beside the reader's other files, and a folder there.
+    let home = home().expect("a home folder");
+    let file = tempfile::Builder::new().prefix("cssv-viewer-test-").suffix(".cssv").tempfile_in(home).unwrap();
+    let folder = tempfile::Builder::new().prefix("cssv-viewer-test-").tempdir_in(home).unwrap();
+    std::fs::write(folder.path().join("x.css"), "x").unwrap();
+    let viewer = Viewer::default();
+    viewer.open("viewer-1", "t1", &path_text(file.path()), nothing()).unwrap();
+    let get = |path: &Path| {
+        let url = file_url("t1", path);
+        let response = viewer.read("viewer-1", url.strip_prefix(PROTOCOL.trim_end_matches('/')).unwrap());
+        (response.status(), body(&response))
+    };
+    assert_eq!(get(file.path()).0, StatusCode::OK);
+    assert_eq!(get(&folder.path().join("x.css")), (StatusCode::FORBIDDEN, "Only the files directly in the home folder are served.".into()));
 }
 
 #[test]

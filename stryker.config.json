@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": ["appimage/build.mjs"],
+  "testRunner": "command",
+  "commandRunner": { "command": "npm run test:appimage" },
+  "coverageAnalysis": "off",
+  "concurrency": 4,
+  "thresholds": { "high": 98, "low": 97, "break": 97 },
+  "reporters": ["html", "json", "clear-text", "progress"],
+  "ignorePatterns": ["/coverage", "/reports", "/dist", "/src-tauri/target", "/src-tauri/gen"]
+}

@@ -36,24 +36,16 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const desktop = path.dirname(here);
 const ARCH = 'x86_64-linux-gnu';
 
-// The packages to start from; apt adds their dependencies.
-const PACKAGES = [
-  'libwebkit2gtk-4.1-0', 'libgtk-3-0', 'libgtk-3-common', 'glib-networking', 'dconf-gsettings-backend',
-  'gsettings-desktop-schemas', 'librsvg2-common', 'libcolord2', 'libcups2', 'libglib2.0-bin',
-];
-// What the AppImage excludelist leaves to the system, plus libGLESv2, which
-// has to match the system's graphics driver like the rest of GL.
-// A commit's list, so the same build bundles the same libraries.
-const EXCLUDELIST = 'https://raw.githubusercontent.com/AppImageCommunity/pkg2appimage/19e30b276ffedf4d3b4b56bc6320f463625a74f8/excludelist';
+// What the build downloads (downloads.json): the packages to start from,
+// which apt completes with their dependencies; the AppImage excludelist, a
+// commit's, so the same build bundles the same libraries; and appimagetool
+// and the AppImage runtime, pinned releases with their SHA-256.
+const { packages: PACKAGES, excludelist: EXCLUDELIST, appimagetool: APPIMAGETOOL, runtime: RUNTIME } = JSON.parse(
+  fs.readFileSync(path.join(here, 'downloads.json')),
+);
+// Left to the system besides the excludelist's: libGLESv2, which has to
+// match the system's graphics driver like the rest of GL.
 const ALSO_EXCLUDED = ['libGLESv2.so.2'];
-const APPIMAGETOOL = {
-  url: 'https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage',
-  sha256: 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0',
-};
-const RUNTIME = {
-  url: 'https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64',
-  sha256: '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d',
-};
 const KEYRING = '/usr/share/keyrings/ubuntu-archive-keyring.gpg';
 // 22.04's glibc: a viewer that needs a newer one won't start there.
 const GLIBC = [2, 35];
@@ -147,8 +139,7 @@ fs.rmSync(appdir, { recursive: true, force: true });
 const into = (...p) => path.join(appdir, 'usr/lib', ARCH, ...p);
 const copy = (from, to) => {
   fs.mkdirSync(path.dirname(to), { recursive: true });
-  fs.copyFileSync(fs.realpathSync(from), to);
-  fs.chmodSync(to, fs.statSync(from).mode);
+  fs.copyFileSync(fs.realpathSync(from), to); // with its mode
 };
 
 copy(binary, path.join(appdir, 'usr/bin/cssv-viewer'));

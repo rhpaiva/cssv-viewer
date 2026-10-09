@@ -15,20 +15,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(fileURLToPath(import.meta.url), '../../..');
 const script = path.join(repo, 'appimage/build.mjs');
-const source = fs.readFileSync(script, 'utf8');
 const ARCH = 'x86_64-linux-gnu';
 const HELPERS = `/usr/lib/${ARCH}/webkit2gtk-4.1`;
 const PATCHED = `././/lib/${ARCH}/webkit2gtk-4.1`;
 
-// The pins and URLs build.mjs holds, read from it so the tests follow it.
-const pin = (name) => {
-  const [, url, sha256] = source.match(new RegExp(`const ${name} = \\{\\s*url: '([^']+)',\\s*sha256: '([0-9a-f]+)'`));
-  return { url, sha256 };
-};
-const APPIMAGETOOL = pin('APPIMAGETOOL');
-const RUNTIME = pin('RUNTIME');
-const EXCLUDELIST = source.match(/const EXCLUDELIST = '([^']+)'/)[1];
-const PACKAGES = [...source.match(/const PACKAGES = \[([^\]]+)\]/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+// What build.mjs downloads, read as it reads it.
+const { packages: PACKAGES, excludelist: EXCLUDELIST, appimagetool: APPIMAGETOOL, runtime: RUNTIME } = JSON.parse(
+  fs.readFileSync(path.join(repo, 'appimage/downloads.json'), 'utf8'),
+);
 
 const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 const write = (file, content, mode) => {
@@ -40,23 +34,29 @@ const write = (file, content, mode) => {
 const LOG = 'log() { printf "%s\\n" "$*" >> "$FAKE_LOG"; }\n';
 const TOOL = (name) => `#!/bin/sh
 ${LOG}log "${name} $* ARCH=$ARCH APPIMAGE_EXTRACT_AND_RUN=$APPIMAGE_EXTRACT_AND_RUN"
+echo "${name}: packing"
+echo "${name}: a warning" >&2
 for last; do :; done
 printf 'AppImage of %s\\n' "$4" > "$last"
 `;
+// The tools say something on their output and on their errors, to show
+// which of the two the build passes on.
 const STUBS = {
-  npx: `#!/bin/sh\n${LOG}log "npx $* in $PWD"\n`,
+  npx: `#!/bin/sh\n${LOG}log "npx $* in $PWD"\necho "npx: building"\n`,
   objdump: `#!/bin/sh\n${LOG}log "objdump $*"\n[ -n "$FAKE_OBJDUMP" ] || { echo "objdump: failed" >&2; exit 1; }\ncat "$FAKE_OBJDUMP"\n`,
   'apt-get': `#!/bin/sh
 ${LOG}log "apt-get $* APT_CONFIG=$APT_CONFIG"
+echo "apt-get: reading package lists"
+echo "apt-get $1: a warning" >&2
 [ -z "$FAKE_APT_FAIL" ] || { echo "apt-get: failed" >&2; exit 100; }
 if [ "$1" = install ]; then
   archives=$(sed -n 's/^Dir::Cache::archives "\\(.*\\)";$/\\1/p' "$APT_CONFIG")
   cp "$FAKE_DEBS"/* "$archives"
 fi
 `,
-  'dpkg-deb': `#!/bin/sh\n${LOG}log "dpkg-deb $*"\nmkdir -p "$3" && tar -xf "$2" -C "$3"\n`,
+  'dpkg-deb': `#!/bin/sh\n${LOG}log "dpkg-deb $*"\n[ "$1" = -x ] || exit 2\nmkdir -p "$3" && tar -xf "$2" -C "$3"\n`,
   // The fake libraries list what they load as "NEEDED <name>" lines.
-  readelf: `#!/bin/sh\nsed -n 's/^NEEDED \\(.*\\)$/ 0x0000000000000001 (NEEDED)             Shared library: [\\1]/p' "$2"\n`,
+  readelf: `#!/bin/sh\n[ "$1" = -d ] || exit 2\nsed -n 's/^NEEDED \\(.*\\)$/ 0x0000000000000001 (NEEDED)             Shared library: [\\1]/p' "$2"\n`,
   which: `#!/bin/sh\n${LOG}log "which $*"\n[ -n "$FAKE_WHICH" ]\n`,
   appimagetool: TOOL('appimagetool'),
 };
@@ -89,11 +89,14 @@ function packages(dir, { webkit = `NEEDED libgtk-3.so.0\nNEEDED libGLESv2.so.2\n
       'usr/share/glib-2.0/schemas/org.gtk.Settings.FileChooser.gschema.xml': '<schemalist/>\n',
       'usr/share/glib-2.0/schemas/10_ubuntu.gschema.override': '[org.gtk.Settings]\n',
       'usr/share/glib-2.0/schemas/README': 'not a schema\n',
+      'usr/share/glib-2.0/schemas/org.gtk.Old.gschema.xml.dpkg-old': '<schemalist/>\n',
       'usr/bin/glib-compile-schemas': [
         '#!/bin/sh\nfiles=$(ls "$1")\nprintf "%s\\nLD_LIBRARY_PATH=%s\\n" "$files" "$LD_LIBRARY_PATH" > "$1/gschemas.compiled"\n', 0o755],
     },
     'zlib1g_1.2_amd64.deb': {
-      [`lib/${ARCH}/libz.so.1`]: 'zlib\n',
+      // libffi only libz loads.
+      [`lib/${ARCH}/libz.so.1`]: 'NEEDED libffi.so.8\n',
+      [`lib/${ARCH}/libffi.so.8`]: 'ffi\n',
       [`lib/${ARCH}/libc.so.6`]: 'libc\n',
     },
   };
@@ -139,7 +142,7 @@ function setup(options = {}) {
   const keyring = path.join(dir, 'ubuntu-archive-keyring.gpg');
   write(keyring, 'key');
   const viewer = path.join(dir, 'build', 'cssv-viewer');
-  write(viewer, options.needs ?? 'NEEDED libwebkit2gtk-4.1.so.0\nNEEDED libgtk-3.so.0\nNEEDED libc.so.6\nNEEDED libmissing.so.9\n', 0o755);
+  write(viewer, options.needs ?? 'NEEDED libwebkit2gtk-4.1.so.0\nNEEDED libgtk-3.so.0\nNEEDED libc.so.6\nNEEDED libmissing.so.9\nNEEDED libgone.so.1\n', 0o755);
   const objdump = path.join(dir, 'objdump.txt');
   write(objdump, options.objdump ?? OBJDUMP);
   const out = path.join(dir, 'dist', 'CSSV-Viewer-x86_64.AppImage');
@@ -157,8 +160,8 @@ function setup(options = {}) {
     ...options.fetch?.({ fakeTool, fakeRuntime }),
   };
 
-  const run = (args = ['--binary', viewer, '--out', out, '--keyring', keyring], env = {}) => {
-    const result = spawnSync(process.execPath, ['--import', pathToFileURL(path.join(repo, 'test/appimage/fake-net.mjs')).href, script, ...args], {
+  const run = (args = ['--binary', viewer, '--out', out, '--keyring', keyring], env = {}, build = script) => {
+    const result = spawnSync(process.execPath, ['--import', pathToFileURL(path.join(repo, 'test/appimage/fake-net.mjs')).href, build, ...args], {
       cwd: dir,
       encoding: 'utf8',
       env: {
@@ -186,9 +189,10 @@ test('packs the viewer, the libraries it loads and their run-time pieces into an
   const s = setup({ which: true });
   t.after(() => fs.rmSync(s.dir, { recursive: true, force: true }));
   // What an earlier build left: the runtime (kept, it has the pinned
-  // SHA-256), an unpacked tree and an AppDir (both made anew), the AppImage
-  // (replaced).
+  // SHA-256), apt's folder of packages, an unpacked tree and an AppDir (both
+  // made anew), the AppImage (replaced).
   write(path.join(s.work, 'runtime-x86_64'), fs.readFileSync(s.fakeRuntime), 0o755);
+  fs.mkdirSync(path.join(s.work, 'debs'), { recursive: true });
   write(path.join(s.work, 'root', 'stale'), 'old');
   write(path.join(s.appdir, 'stale'), 'old');
   write(s.out, 'the old AppImage');
@@ -237,6 +241,7 @@ test('packs the viewer, the libraries it loads and their run-time pieces into an
     'gio/modules/libgiognutls.so',
     'gtk-3.0/3.0.0/printbackends/libprintbackend-cups.so',
     'gtk-3.0/3.0.0/printbackends/libprintbackend-file.so',
+    'libffi.so.8',
     'libgtk-3.so.0',
     'libwebkit2gtk-4.1.so.0',
     'libz.so.1',
@@ -248,8 +253,7 @@ test('packs the viewer, the libraries it loads and their run-time pieces into an
   assert.ok(!fs.lstatSync(path.join(lib, 'libgtk-3.so.0')).isSymbolicLink());
   assert.equal(read(lib, 'libgtk-3.so.0'), 'NEEDED libz.so.1\nNEEDED libdrm.so.2\n');
   assert.equal(mode(path.join(lib, 'webkit2gtk-4.1/WebKitWebProcess')), 0o755);
-  assert.match(r.stdout, /^appimage: 3 libraries$/m);
-  assert.match(r.stderr, /^appimage: left to the system, not in the excludelist: libmissing\.so\.9$/m);
+  assert.match(r.stderr, /^appimage: left to the system, not in the excludelist: libmissing\.so\.9 libgone\.so\.1$/m);
   assert.doesNotMatch(r.stderr, /glibc/);
 
   // The helper processes' path, patched in place to the same length.
@@ -280,9 +284,21 @@ test('packs the viewer, the libraries it loads and their run-time pieces into an
   ]);
   assert.equal(read(s.out), `AppImage of ${s.appdir}\n`);
   assert.ok(!fs.existsSync(`${s.out}.next`));
-  assert.match(r.stdout, /^appimage: dist\/CSSV-Viewer-x86_64\.AppImage, 0 MB$/m);
   // Nothing downloaded but the excludelist.
   assert.deepEqual(calls.filter((c) => c.startsWith('fetch')), [`fetch ${EXCLUDELIST}`]);
+
+  // What it says, and what of apt's and appimagetool's it passes on: their
+  // warnings and errors, not their progress.
+  assert.deepEqual(r.stdout.trim().split('\n'), [
+    'appimage: downloading Ubuntu 22.04 packages',
+    'appimage: 4 libraries',
+    'appimage: dist/CSSV-Viewer-x86_64.AppImage, 0 MB',
+  ]);
+  assert.deepEqual(r.stderr.trim().split('\n').filter((l) => !l.startsWith('appimage:')), [
+    'apt-get update: a warning',
+    'apt-get install: a warning',
+    'appimagetool: a warning',
+  ]);
 });
 
 test('downloads appimagetool and the runtime when they are missing or not the pinned ones', (t) => {
@@ -344,14 +360,18 @@ test('stops when libwebkit2gtk does not hold the helpers path', (t) => {
 
 test('warns when the viewer needs a glibc newer than 22.04 has, ignoring weak symbols', async (t) => {
   // apt fails right after the check, so these runs stop there.
+  const symbol = (version, name) => `0000000000000000      DF *UND*\t0000000000000000 (GLIBC_${version}) ${name}\n`;
   const cases = [
     [OBJDUMP, null],
-    [`${OBJDUMP}0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.36) getrandom\n`, '2.36'],
-    // A 2.x after the 3.0, to compare a smaller major version too.
-    [`${OBJDUMP}0000000000000000      DF *UND*\t0000000000000000 (GLIBC_3.0) future\n0000000000000000      DF *UND*\t0000000000000000 (GLIBC_2.10) after\n`, '3.0'],
+    [`${OBJDUMP}${symbol('2.35', 'exactly')}`, null],
+    // Older versions after a newer one, of the same major version and of a smaller one.
+    [`${OBJDUMP}${symbol('2.36', 'getrandom')}${symbol('2.4', 'after')}`, '2.36'],
+    [`${OBJDUMP}${symbol('10.0', 'future')}${symbol('2.10', 'after')}`, '10.0'],
+    // A symbol named w isn't a weak one: only the flags' column says.
+    [`${OBJDUMP}${symbol('2.36', 'w')}`, '2.36'],
   ];
   for (const [objdump, needs] of cases) {
-    await t.test(needs ?? 'none', (t) => {
+    await t.test(`${needs ?? 'none'} (${objdump.trim().split('\n').at(-1).split(' ').at(-1)})`, (t) => {
       const s = setup({ objdump });
       t.after(() => fs.rmSync(s.dir, { recursive: true, force: true }));
       const r = s.run(undefined, { FAKE_APT_FAIL: '1' });
@@ -370,12 +390,27 @@ test('builds the viewer first without --binary', (t) => {
   // objdump fails, so the run stops before anything is written.
   const r = s.run(['--out', s.out, '--keyring', s.keyring], { FAKE_OBJDUMP: '' });
   assert.notEqual(r.status, 0);
-  assert.match(r.stdout, /^appimage: building the viewer$/m);
+  // tauri's output shows as it builds.
+  assert.deepEqual(r.stdout.trim().split('\n'), ['appimage: building the viewer', 'npx: building']);
   assert.deepEqual(r.log.trim().split('\n'), [
     `npx tauri build --no-bundle in ${repo}`,
     `objdump -T ${path.join(repo, 'src-tauri/target/release/cssv-viewer')}`,
   ]);
   assert.ok(!fs.existsSync(s.work));
+});
+
+test('without --out, writes the AppImage to dist/ in its checkout', (t) => {
+  const s = setup({ which: true, fetch: ({ fakeRuntime }) => ({ [RUNTIME.url]: { file: fakeRuntime } }) });
+  t.after(() => fs.rmSync(s.dir, { recursive: true, force: true }));
+  // A checkout of its own: build.mjs finds dist/ from where it is.
+  const checkout = path.join(s.dir, 'checkout');
+  for (const file of ['appimage/build.mjs', 'appimage/downloads.json', 'appimage/AppRun', 'appimage/cssv-viewer.desktop', 'src-tauri/icons/128x128@2x.png']) {
+    fs.mkdirSync(path.dirname(path.join(checkout, file)), { recursive: true });
+    fs.copyFileSync(path.join(repo, file), path.join(checkout, file));
+  }
+  const r = s.run(['--binary', s.viewer, '--keyring', s.keyring], {}, path.join(checkout, 'appimage/build.mjs'));
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(read(checkout, 'dist/CSSV-Viewer-x86_64.AppImage'), `AppImage of ${path.join(checkout, 'dist/.appimage/AppDir')}\n`);
 });
 
 test('stops at once without the keyring that checks the packages', (t) => {

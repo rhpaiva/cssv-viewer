@@ -1,0 +1,11 @@
+# cargo mutants (npm run mutate:rust) changes the Rust side one small edit
+# at a time and checks that the unit tests fail for each. The window's glue,
+# which only the real viewer runs (test/e2e, far too slow to run for each
+# mutant), is left out: the Tauri commands, the protocol's handler, show,
+# run and the print dialog's hook. So is the Windows-only match arm in
+# file_url, which Linux compiles out.
+test_tool = "nextest"
+exclude_re = [
+  "delete match arm Component::Prefix",
+  "(replace|in) (serve|open_file|close_tab|take_opens|save_file|preview_file|set_page|quit|integration|set_integration|show|commands|run|prepare_prints|set_up|main)\\b",
+]

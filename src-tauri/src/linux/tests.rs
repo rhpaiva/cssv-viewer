@@ -1,15 +1,7 @@
+use super::*;
+use crate::tests::turn;
 use std::ffi::OsString;
 use std::os::unix::fs::PermissionsExt;
-use std::sync::{Mutex, MutexGuard};
-
-use super::*;
-
-/// Tests that set variables take turns (cargo nextest runs each test in a
-/// process of its own anyway).
-fn turn() -> MutexGuard<'static, ()> {
-    static TURN: Mutex<()> = Mutex::new(());
-    TURN.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
 
 /// Sets variables, or removes those set to None, until it's dropped.
 struct Env(Vec<(&'static str, Option<OsString>)>);

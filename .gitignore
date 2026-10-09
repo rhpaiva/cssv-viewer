@@ -4,3 +4,5 @@ src-tauri/gen/
 dist/
 coverage/
 *.profraw
+reports/
+.stryker-tmp/

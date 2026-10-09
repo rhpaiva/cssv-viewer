@@ -8,6 +8,10 @@
 #   build's in Node (c8), then the Rust tests and the real viewer in a
 #   virtual display (test/coverage-rust.js), which needs a nightly toolchain
 #   to count branches. The reports are kept as an artifact.
+# mutation: Stryker changes appimage/build.mjs, and cargo-mutants the Rust
+#   side but its window glue, one small edit at a time; the tests must fail
+#   for each change. The pages in ui/ aren't mutated: each mutant would need
+#   a full browser run. The reports are kept as an artifact.
 name: Test
 
 on:
@@ -102,3 +106,27 @@ jobs:
         with:
           name: coverage
           path: coverage/
+
+  mutation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: 26, cache: npm }
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with: { toolchain: stable }
+      - name: Tauri's system libraries, and a display for the print dialog's test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev libxdo-dev xvfb dbus
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with: { tool: 'cargo-mutants,cargo-nextest' }
+      - run: npm ci
+      - run: npm run mutate:js
+      - run: npm run mutate:rust -- --jobs 2
+        if: ${{ !cancelled() }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: mutation
+          path: reports/

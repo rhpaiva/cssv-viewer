@@ -1,0 +1,15 @@
+{
+  "packages": [
+    "libwebkit2gtk-4.1-0", "libgtk-3-0", "libgtk-3-common", "glib-networking", "dconf-gsettings-backend",
+    "gsettings-desktop-schemas", "librsvg2-common", "libcolord2", "libcups2", "libglib2.0-bin"
+  ],
+  "excludelist": "https://raw.githubusercontent.com/AppImageCommunity/pkg2appimage/19e30b276ffedf4d3b4b56bc6320f463625a74f8/excludelist",
+  "appimagetool": {
+    "url": "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage",
+    "sha256": "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+  },
+  "runtime": {
+    "url": "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64",
+    "sha256": "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
+  }
+}
