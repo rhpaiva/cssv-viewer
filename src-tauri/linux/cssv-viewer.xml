@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Tells Linux desktops that *.cssv files are CSSV tables, so they open in the
      viewer. CSSV has no registered media type (SPEC 3.3); this name is local
-     to the desktop. A CSSV file is plain text, so text editors still offer it. -->
+     to the desktop. A CSSV file is plain text, so text editors still offer it.
+     The generic icon is the file icon itself: GTK looks for every name in the
+     icon theme before hicolor, where the file icon is, so the default generic
+     icon, text-x-generic, would show the theme's text icon instead. -->
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
   <mime-type type="text/x-cssv">
     <comment>CSSV table</comment>
     <sub-class-of type="text/plain"/>
+    <generic-icon name="text-x-cssv"/>
     <glob pattern="*.cssv"/>
   </mime-type>
 </mime-info>

@@ -333,6 +333,32 @@ fn an_older_setup_gets_this_viewer_s_icons() {
 }
 
 #[test]
+fn an_older_setup_gets_this_viewer_s_media_type() {
+    let _turn = turn();
+    let desktop = Desktop::new();
+    let _env = desktop.env();
+    let data = desktop.data();
+    install().unwrap();
+    // Set up by 0.1.1, whose media type had no generic icon.
+    let xml = mime_path(&data);
+    std::fs::write(&xml, MIME_XML.replace(GENERIC_ICON, "")).unwrap();
+    std::fs::write(desktop.path("tools.log"), "").unwrap();
+    refresh();
+    assert_eq!(std::fs::read_to_string(&xml).unwrap(), MIME_XML);
+    assert_eq!(desktop.tools().lines().collect::<Vec<_>>(), [format!("update-mime-database {}", data.join("mime").display())]);
+}
+
+const GENERIC_ICON: &str = "\n    <generic-icon name=\"text-x-cssv\"/>";
+
+/// GTK looks for every name in the icon theme before hicolor, so the theme's
+/// text-x-generic, the generic icon a text type gets by default, would win.
+#[test]
+fn the_file_icon_is_the_media_type_s_generic_icon_too() {
+    assert!(MIME_XML.contains(GENERIC_ICON), "{MIME_XML}");
+    assert!(icon_paths(Path::new("/data")).any(|(path, _)| path.ends_with("mimetypes/text-x-cssv.png")));
+}
+
+#[test]
 fn desktop_tools_run_without_the_appimage_libraries() {
     let _turn = turn();
     let desktop = Desktop::new();

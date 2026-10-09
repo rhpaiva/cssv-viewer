@@ -59,6 +59,10 @@ fn entry_path(data: &Path) -> PathBuf {
     data.join("applications").join(ENTRY)
 }
 
+fn mime_path(data: &Path) -> PathBuf {
+    data.join("mime/packages/cssv-viewer.xml")
+}
+
 /// The app's icon, and the icon of .cssv files in file managers.
 fn icon_paths(data: &Path) -> impl Iterator<Item = (PathBuf, &'static [u8])> {
     let hicolor = data.join("icons/hicolor");
@@ -200,7 +204,7 @@ pub fn install() -> Result<(), String> {
     let appimage = appimage().ok_or("The viewer isn't running as an AppImage.")?;
     let data = data_home().ok_or("No home folder.")?;
     write_entry(&data, &appimage)?;
-    write(&data.join("mime/packages/cssv-viewer.xml"), MIME_XML.as_bytes())?;
+    write(&mime_path(&data), MIME_XML.as_bytes())?;
     for (path, png) in icon_paths(&data) {
         write(&path, png)?;
     }
@@ -214,7 +218,7 @@ pub fn remove() -> Result<(), String> {
     if installed_for(&data).is_none() {
         return Ok(()); // not ours to remove
     }
-    let mut files = vec![entry_path(&data), data.join("mime/packages/cssv-viewer.xml")];
+    let mut files = vec![entry_path(&data), mime_path(&data)];
     files.extend(icon_paths(&data).map(|(path, _)| path));
     for file in files {
         match std::fs::remove_file(&file) {
@@ -249,8 +253,8 @@ fn forget_default() {
 }
 
 /// At start: if the menu entry runs an AppImage that is gone (moved, or
-/// replaced by a newer download), point it at this one. The entry's icons
-/// then become this viewer's, in case an older one set them up.
+/// replaced by a newer download), point it at this one. The entry's icons and
+/// media type then become this viewer's, in case an older one set them up.
 pub fn refresh() {
     let (Some(appimage), Some(data)) = (appimage(), data_home()) else { return };
     let Some(old) = installed_for(&data) else { return };
@@ -267,6 +271,10 @@ pub fn refresh() {
             let _ = write(&path, png);
         }
         host("gtk-update-icon-cache", &["-f", "-t", &data.join("icons/hicolor").to_string_lossy()]);
+    }
+    if std::fs::read(mime_path(&data)).ok().as_deref() != Some(MIME_XML.as_bytes()) {
+        let _ = write(&mime_path(&data), MIME_XML.as_bytes());
+        host("update-mime-database", &[&data.join("mime").to_string_lossy()]);
     }
 }
 
