@@ -458,7 +458,10 @@ fn the_protocol_refuses_a_file_it_cannot_read() {
 fn the_protocol_knows_the_reader_s_home_folder() {
     let _turn = turn();
     // A file in the home folder, beside the reader's other files, and a folder there.
-    let home = home().expect("a home folder");
+    // The home folder as the reader names it: on Windows, home() is canonical, a
+    // \\?\C:\ path, which file_url doesn't turn into a URL.
+    let home = PathBuf::from(std::env::var_os(HOME).expect("a home folder"));
+    let home = home.as_path();
     let file = tempfile::Builder::new().prefix("cssv-viewer-test-").suffix(".cssv").tempfile_in(home).unwrap();
     let folder = tempfile::Builder::new().prefix("cssv-viewer-test-").tempdir_in(home).unwrap();
     std::fs::write(folder.path().join("x.css"), "x").unwrap();
